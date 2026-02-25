@@ -47,7 +47,7 @@ export function UserMenuContent({ user }: Props) {
                 preserveScroll: false,
                 onSuccess: () => {
                     console.log('✅ Logout réussi - Redirection');
-                    router.visit('/login', {
+                    router.visit('/', {
                         replace: true,
                         preserveState: false,
                     });

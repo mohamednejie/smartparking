@@ -1,7 +1,7 @@
 import { Form, Head, router, usePage } from '@inertiajs/react';
 import { Fragment, useEffect, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { CheckCircle, Mail } from 'lucide-react';
+import { CheckCircle, Mail, Car, ParkingCircle } from 'lucide-react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,8 +11,11 @@ import AuthLayout from '@/layouts/auth-layout';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
 
-export default function RegisterOwner() {
+export default function Register() {
     const { errors: serverErrors } = usePage().props as any;
+
+    // 🔥 État pour le rôle sélectionné
+    const [selectedRole, setSelectedRole] = useState<'driver' | 'owner'>('driver');
 
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(
         serverErrors ?? {},
@@ -32,6 +35,13 @@ export default function RegisterOwner() {
         });
     };
 
+    // 🔥 Quand on change de rôle, on efface l'erreur parking_photo
+    const handleRoleChange = (role: 'driver' | 'owner') => {
+        setSelectedRole(role);
+        clearFieldError('parking_photo');
+        clearFieldError('role');
+    };
+
     const handleGoToLogin = () => {
         router.visit(login(), {
             replace: true,
@@ -39,12 +49,26 @@ export default function RegisterOwner() {
         });
     };
 
+    // 🔥 Textes dynamiques selon le rôle
+    const pageConfig = {
+        driver: {
+            title: 'Create a driver account',
+            description: 'Enter your details below to start finding parking spots',
+            buttonText: 'Create driver account',
+        },
+        owner: {
+            title: 'Create a parking owner account',
+            description: 'Enter your details and upload a photo of your parking to validate your account',
+            buttonText: 'Create owner account',
+        },
+    };
+
     return (
         <AuthLayout
-            title="Create a parking owner account"
-            description="Enter your details below and upload a photo of your parking to validate your account"
+            title={pageConfig[selectedRole].title}
+            description={pageConfig[selectedRole].description}
         >
-            <Head title="Register - Parking owner" />
+            <Head title={`Register - ${selectedRole === 'driver' ? 'Driver' : 'Parking Owner'}`} />
 
             <Form
                 {...store.form()}
@@ -60,15 +84,11 @@ export default function RegisterOwner() {
                 }}
             >
                 {({ processing }) => {
-                    const rawPasswordError = fieldErrors.password as
-                        | string
-                        | undefined;
+                    const rawPasswordError = fieldErrors.password as string | undefined;
 
                     const isConfirmationMismatch =
                         rawPasswordError &&
-                        rawPasswordError
-                            .toLowerCase()
-                            .includes('confirmation') &&
+                        rawPasswordError.toLowerCase().includes('confirmation') &&
                         rawPasswordError.toLowerCase().includes('match');
 
                     const passwordError = isConfirmationMismatch
@@ -82,6 +102,59 @@ export default function RegisterOwner() {
                     return (
                         <>
                             <div className="grid gap-6">
+                                {/* ═══════════════════════════════════════════════ */}
+                                {/* 🔥 SÉLECTEUR DE RÔLE                            */}
+                                {/* ═══════════════════════════════════════════════ */}
+                                <div className="grid gap-3">
+                                    <Label>I want to register as</Label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {/* Option Driver */}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRoleChange('driver')}
+                                            className={`
+                                                flex flex-col items-center gap-2 rounded-lg border-2 p-4 
+                                                transition-all duration-200 cursor-pointer
+                                                ${selectedRole === 'driver'
+                                                    ? 'border-primary bg-primary/5 text-primary'
+                                                    : 'border-muted-foreground/20 hover:border-muted-foreground/40'
+                                                }
+                                            `}
+                                        >
+                                            <Car className={`h-8 w-8 ${selectedRole === 'driver' ? 'text-primary' : 'text-muted-foreground'}`} />
+                                            <div className="text-center">
+                                                <p className="font-medium">Driver</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Find parking spots
+                                                </p>
+                                            </div>
+                                        </button>
+
+                                        {/* Option Owner */}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRoleChange('owner')}
+                                            className={`
+                                                flex flex-col items-center gap-2 rounded-lg border-2 p-4 
+                                                transition-all duration-200 cursor-pointer
+                                                ${selectedRole === 'owner'
+                                                    ? 'border-primary bg-primary/5 text-primary'
+                                                    : 'border-muted-foreground/20 hover:border-muted-foreground/40'
+                                                }
+                                            `}
+                                        >
+                                            <ParkingCircle className={`h-8 w-8 ${selectedRole === 'owner' ? 'text-primary' : 'text-muted-foreground'}`} />
+                                            <div className="text-center">
+                                                <p className="font-medium">Owner</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Rent your parking
+                                                </p>
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <InputError message={fieldErrors.role} />
+                                </div>
+
                                 {/* Name */}
                                 <div className="grid gap-2">
                                     <Label htmlFor="name">Name</Label>
@@ -101,17 +174,12 @@ export default function RegisterOwner() {
                                         }
                                         onChange={() => clearFieldError('name')}
                                     />
-                                    <InputError
-                                        message={fieldErrors.name}
-                                        className="mt-2"
-                                    />
+                                    <InputError message={fieldErrors.name} className="mt-2" />
                                 </div>
 
                                 {/* Email */}
                                 <div className="grid gap-2">
-                                    <Label htmlFor="email">
-                                        Email address
-                                    </Label>
+                                    <Label htmlFor="email">Email address</Label>
                                     <Input
                                         id="email"
                                         type="email"
@@ -125,13 +193,9 @@ export default function RegisterOwner() {
                                                 ? 'border-red-500 focus-visible:ring-red-500'
                                                 : ''
                                         }
-                                        onChange={() =>
-                                            clearFieldError('email')
-                                        }
+                                        onChange={() => clearFieldError('email')}
                                     />
-                                    <InputError
-                                        message={fieldErrors.email}
-                                    />
+                                    <InputError message={fieldErrors.email} />
                                 </div>
 
                                 {/* Password */}
@@ -150,18 +214,14 @@ export default function RegisterOwner() {
                                                 ? 'border-red-500 focus-visible:ring-red-500'
                                                 : ''
                                         }
-                                        onChange={() =>
-                                            clearFieldError('password')
-                                        }
+                                        onChange={() => clearFieldError('password')}
                                     />
                                     <InputError message={passwordError} />
                                 </div>
 
                                 {/* Confirm password */}
                                 <div className="grid gap-2">
-                                    <Label htmlFor="password_confirmation">
-                                        Confirm password
-                                    </Label>
+                                    <Label htmlFor="password_confirmation">Confirm password</Label>
                                     <Input
                                         id="password_confirmation"
                                         type="password"
@@ -176,58 +236,57 @@ export default function RegisterOwner() {
                                                 : ''
                                         }
                                         onChange={() => {
-                                            clearFieldError(
-                                                'password_confirmation',
-                                            );
+                                            clearFieldError('password_confirmation');
                                             clearFieldError('password');
                                         }}
                                     />
-                                    <InputError
-                                        message={passwordConfirmationError}
-                                    />
+                                    <InputError message={passwordConfirmationError} />
                                 </div>
 
-                                {/* Parking photo */}
-                                <div className="grid gap-2">
-                                    <Label htmlFor="parking_photo">
-                                        Parking photo (required)
-                                    </Label>
-                                    <Input
-                                        id="parking_photo"
-                                        type="file"
-                                        name="parking_photo"
-                                        accept="image/*"
-                                        required
-                                        tabIndex={5}
-                                        className={
-                                            fieldErrors.parking_photo
-                                                ? 'border-red-500 focus-visible:ring-red-500'
-                                                : ''
-                                        }
-                                        onChange={() =>
-                                            clearFieldError('parking_photo')
-                                        }
-                                    />
-                                    <InputError
-                                        message={fieldErrors.parking_photo}
-                                    />
-                                </div>
+                                {/* ═══════════════════════════════════════════════ */}
+                                {/* 🔥 CHAMP PARKING PHOTO - UNIQUEMENT POUR OWNER  */}
+                                {/* ═══════════════════════════════════════════════ */}
+                                {selectedRole === 'owner' && (
+                                    <div className="grid gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                        <Label htmlFor="parking_photo">
+                                            Parking photo <span className="text-red-500">*</span>
+                                        </Label>
+                                        <div className="rounded-lg border border-dashed border-muted-foreground/30 p-4">
+                                            <Input
+                                                id="parking_photo"
+                                                type="file"
+                                                name="parking_photo"
+                                                accept="image/*"
+                                                required={selectedRole === 'owner'}
+                                                tabIndex={5}
+                                                className={
+                                                    fieldErrors.parking_photo
+                                                        ? 'border-red-500 focus-visible:ring-red-500'
+                                                        : ''
+                                                }
+                                                onChange={() => clearFieldError('parking_photo')}
+                                            />
+                                            <p className="mt-2 text-xs text-muted-foreground">
+                                                Upload a clear photo of your parking lot. 
+                                                Our AI will verify it's a valid parking space.
+                                            </p>
+                                        </div>
+                                        <InputError message={fieldErrors.parking_photo} />
+                                    </div>
+                                )}
 
-                                <input
-                                    type="hidden"
-                                    name="role"
-                                    value="owner"
-                                />
+                                {/* 🔥 Champ caché pour le rôle */}
+                                <input type="hidden" name="role" value={selectedRole} />
 
                                 <Button
                                     type="submit"
                                     className="mt-2 w-full"
                                     tabIndex={6}
-                                    data-test="register-owner-button"
+                                    data-test="register-button"
                                     disabled={processing}
                                 >
                                     {processing && <Spinner />}
-                                    Create owner account
+                                    {pageConfig[selectedRole].buttonText}
                                 </Button>
                             </div>
 
@@ -289,7 +348,10 @@ export default function RegisterOwner() {
 
                                     {/* Titre */}
                                     <Dialog.Title className="mt-6 text-center text-xl font-bold text-gray-900 dark:text-white">
-                                        Account Created Successfully! 🎉
+                                        {selectedRole === 'owner' 
+                                            ? 'Owner Account Created! 🎉' 
+                                            : 'Account Created Successfully! 🎉'
+                                        }
                                     </Dialog.Title>
 
                                     {/* Message email */}
@@ -297,22 +359,30 @@ export default function RegisterOwner() {
                                         <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
                                             <Mail className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
                                             <div className="text-sm text-blue-800 dark:text-blue-300">
-                                                <p className="font-semibold">
-                                                    Verify your email
-                                                </p>
+                                                <p className="font-semibold">Verify your email</p>
                                                 <p className="mt-1">
-                                                    We've sent a verification
-                                                    link to your email address.
-                                                    Please check your inbox and
-                                                    click the link to activate
-                                                    your account.
+                                                    We've sent a verification link to your email address.
+                                                    Please check your inbox and click the link to activate your account.
                                                 </p>
                                             </div>
                                         </div>
 
+                                        {/* 🔥 Message spécifique pour les owners */}
+                                        {selectedRole === 'owner' && (
+                                            <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                                                <ParkingCircle className="mt-0.5 h-5 w-5 shrink-0 text-green-600 dark:text-green-400" />
+                                                <div className="text-sm text-green-800 dark:text-green-300">
+                                                    <p className="font-semibold">Parking verified ✓</p>
+                                                    <p className="mt-1">
+                                                        Your parking photo has been validated by our AI.
+                                                        You can start listing your parking spaces!
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <p className="text-center text-xs text-muted-foreground">
-                                            Don't forget to check your spam
-                                            folder!
+                                            Don't forget to check your spam folder!
                                         </p>
                                     </div>
 
@@ -320,11 +390,9 @@ export default function RegisterOwner() {
                                     <div className="mt-6">
                                         <Button
                                             className="w-full"
-                                            onClick={() =>
-                                                setShowSuccessModal(false)
-                                            }
+                                            onClick={handleGoToLogin}
                                         >
-                                            OK, Got it
+                                            Go to Login
                                         </Button>
                                     </div>
                                 </Dialog.Panel>

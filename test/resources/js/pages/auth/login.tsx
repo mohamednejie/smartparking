@@ -224,7 +224,7 @@ export default function Login({
                             </div>
 
                             {/* Remember me */}
-                            <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-3 cursor-pointer">
                                 <Checkbox
                                     id="remember"
                                     name="remember"
@@ -236,7 +236,7 @@ export default function Login({
                             {/* Submit */}
                             <Button
                                 type="submit"
-                                className="mt-4 w-full"
+                                className="mt-4 w-full cursor-pointer"
                                 tabIndex={4}
                                 disabled={processing}
                                 data-test="login-button"

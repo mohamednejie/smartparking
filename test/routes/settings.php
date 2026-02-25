@@ -3,6 +3,7 @@
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
+use App\Http\Controllers\Settings\VehicleController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -28,5 +29,15 @@ Route::middleware(['auth', 'verified', 'no.back'])->group(function () {
 
     Route::get('settings/two-factor', [TwoFactorAuthenticationController::class, 'show'])
         ->name('two-factor.show');
-});
 
+    // ══════════════════════════════════════════════════════════════════
+    // 🚗 VEHICLES ROUTES (Drivers only)
+    // ══════════════════════════════════════════════════════════════════
+    Route::prefix('settings/vehicles')->name('vehicles.')->group(function () {
+        Route::get('/', [VehicleController::class, 'index'])->name('index');
+        Route::post('/', [VehicleController::class, 'store'])->name('store');
+        Route::put('/{vehicle}', [VehicleController::class, 'update'])->name('update');
+        Route::delete('/{vehicle}', [VehicleController::class, 'destroy'])->name('destroy');
+        Route::patch('/{vehicle}/primary', [VehicleController::class, 'setPrimary'])->name('set-primary');
+    });
+});

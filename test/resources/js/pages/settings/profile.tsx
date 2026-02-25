@@ -44,14 +44,16 @@ export default function Profile({
 
     const [showErrorModal, setShowErrorModal] = useState(false);
 
-    // 🔥 Afficher tout dans la console du navigateur (F12 → Console)
+    // 🔥 Récupérer le rôle de l'utilisateur
+    const userRole = auth.user.role; // 'driver' ou 'owner'
+    const isOwner = userRole === 'owner';
+
+    // Debug
     console.log('══════════════════════════════════════');
     console.log('👤 User complet:', auth.user);
+    console.log('🎭 Role:', userRole);
     console.log('📋 Profile:', profile);
     console.log('🖼️ Avatar URL:', avatarUrl);
-    console.log('📧 Must verify email:', mustVerifyEmail);
-    console.log('📌 Status:', status);
-    console.log('❌ Errors:', errors);
     console.log('══════════════════════════════════════');
 
     // Ouvrir le modal dès qu'il y a des erreurs
@@ -83,6 +85,7 @@ export default function Profile({
                         description="Update your profile information"
                     />
 
+                    
                     {/* Avatar actuel */}
                     {avatarUrl && (
                         <div className="mb-4 flex justify-start">
@@ -109,7 +112,6 @@ export default function Profile({
                                 {/* Name */}
                                 <div className="grid gap-2">
                                     <Label htmlFor="name">Name</Label>
-
                                     <Input
                                         id="name"
                                         name="name"
@@ -124,7 +126,6 @@ export default function Profile({
                                                 : ''
                                         }`}
                                     />
-
                                     <InputError
                                         className="mt-2"
                                         message={formErrors.name}
@@ -133,10 +134,7 @@ export default function Profile({
 
                                 {/* Email */}
                                 <div className="grid gap-2">
-                                    <Label htmlFor="email">
-                                        Email address
-                                    </Label>
-
+                                    <Label htmlFor="email">Email address</Label>
                                     <Input
                                         id="email"
                                         type="email"
@@ -152,7 +150,6 @@ export default function Profile({
                                                 : ''
                                         }`}
                                     />
-
                                     <InputError
                                         className="mt-2"
                                         message={formErrors.email}
@@ -203,77 +200,85 @@ export default function Profile({
                                     />
                                 </div>
 
-                                {/* Company name */}
-                                <div className="grid gap-2">
-                                    <Label htmlFor="company_name">
-                                        Company / Parking name
-                                    </Label>
-                                    <Input
-                                        id="company_name"
-                                        name="company_name"
-                                        placeholder="Company name"
-                                        defaultValue={prof.company_name ?? ''}
-                                        maxLength={255}
-                                        className={`mt-1 block w-full ${
-                                            formErrors.company_name
-                                                ? 'border-red-500 focus-visible:ring-red-500'
-                                                : ''
-                                        }`}
-                                    />
-                                    <InputError
-                                        className="mt-2"
-                                        message={formErrors.company_name}
-                                    />
-                                </div>
+                                {/* ═══════════════════════════════════════════════ */}
+                                {/* 🔥 CHAMPS RÉSERVÉS AUX OWNERS UNIQUEMENT        */}
+                                {/* ═══════════════════════════════════════════════ */}
+                                {isOwner && (
+                                    <>
+                                        {/* Company name */}
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="company_name">
+                                                Company / Parking name
+                                            </Label>
+                                            <Input
+                                                id="company_name"
+                                                name="company_name"
+                                                placeholder="Company name"
+                                                defaultValue={prof.company_name ?? ''}
+                                                maxLength={255}
+                                                className={`mt-1 block w-full ${
+                                                    formErrors.company_name
+                                                        ? 'border-red-500 focus-visible:ring-red-500'
+                                                        : ''
+                                                }`}
+                                            />
+                                            <InputError
+                                                className="mt-2"
+                                                message={formErrors.company_name}
+                                            />
+                                        </div>
 
-                                {/* Website */}
-                                <div className="grid gap-2">
-                                    <Label htmlFor="website">Website</Label>
-                                    <Input
-                                        id="website"
-                                        name="website"
-                                        placeholder="https://example.com"
-                                        defaultValue={prof.website ?? ''}
-                                        maxLength={255}
-                                        type="url"
-                                        className={`mt-1 block w-full ${
-                                            formErrors.website
-                                                ? 'border-red-500 focus-visible:ring-red-500'
-                                                : ''
-                                        }`}
-                                    />
-                                    <InputError
-                                        className="mt-2"
-                                        message={formErrors.website}
-                                    />
-                                </div>
+                                        {/* Website */}
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="website">Website</Label>
+                                            <Input
+                                                id="website"
+                                                name="website"
+                                                placeholder="https://example.com"
+                                                defaultValue={prof.website ?? ''}
+                                                maxLength={255}
+                                                type="url"
+                                                className={`mt-1 block w-full ${
+                                                    formErrors.website
+                                                        ? 'border-red-500 focus-visible:ring-red-500'
+                                                        : ''
+                                                }`}
+                                            />
+                                            <InputError
+                                                className="mt-2"
+                                                message={formErrors.website}
+                                            />
+                                        </div>
 
-                                {/* Description / bio */}
-                                <div className="grid gap-2">
-                                    <Label htmlFor="bio">Description</Label>
-                                    <textarea
-                                        id="bio"
-                                        name="bio"
-                                        defaultValue={prof.bio ?? ''}
-                                        maxLength={1000}
-                                        className={`mt-1 block w-full rounded border px-3 py-2 text-sm ${
-                                            formErrors.bio
-                                                ? 'border-red-500 focus-visible:ring-red-500'
-                                                : ''
-                                        }`}
-                                        placeholder="Short description about you or your parking"
-                                    />
-                                    <InputError
-                                        className="mt-2"
-                                        message={formErrors.bio}
-                                    />
-                                </div>
+                                        {/* Description / bio */}
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="bio">
+                                                Parking Description
+                                            </Label>
+                                            <textarea
+                                                id="bio"
+                                                name="bio"
+                                                defaultValue={prof.bio ?? ''}
+                                                maxLength={1000}
+                                                rows={4}
+                                                className={`mt-1 block w-full rounded-md border px-3 py-2 text-sm ${
+                                                    formErrors.bio
+                                                        ? 'border-red-500 focus-visible:ring-red-500'
+                                                        : 'border-input'
+                                                }`}
+                                                placeholder="Describe your parking facilities, amenities, opening hours, etc."
+                                            />
+                                            <InputError
+                                                className="mt-2"
+                                                message={formErrors.bio}
+                                            />
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Avatar upload */}
                                 <div className="grid gap-2">
-                                    <Label htmlFor="avatar">
-                                        Profile photo
-                                    </Label>
+                                    <Label htmlFor="avatar">Profile photo</Label>
                                     <Input
                                         id="avatar"
                                         type="file"
@@ -296,8 +301,7 @@ export default function Profile({
                                     auth.user.email_verified_at === null && (
                                         <div>
                                             <p className="-mt-4 text-sm text-muted-foreground">
-                                                Your email address is
-                                                unverified.{' '}
+                                                Your email address is unverified.{' '}
                                                 <Link
                                                     href={send()}
                                                     as="button"
@@ -308,12 +312,10 @@ export default function Profile({
                                                 </Link>
                                             </p>
 
-                                            {status ===
-                                                'verification-link-sent' && (
+                                            {status === 'verification-link-sent' && (
                                                 <div className="mt-2 text-sm font-medium text-green-600">
-                                                    A new verification link has
-                                                    been sent to your email
-                                                    address.
+                                                    A new verification link has been
+                                                    sent to your email address.
                                                 </div>
                                             )}
                                         </div>
@@ -377,15 +379,12 @@ export default function Profile({
                                 leaveFrom="opacity-100 scale-100"
                                 leaveTo="opacity-0 scale-95"
                             >
-                                <Dialog.Panel className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+                                <Dialog.Panel className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-900">
                                     <Dialog.Title className="text-lg font-semibold text-red-600">
                                         Form errors
                                     </Dialog.Title>
-                                    <div className="mt-2 text-sm text-gray-700">
-                                        <p>
-                                            Please correct the following
-                                            fields:
-                                        </p>
+                                    <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+                                        <p>Please correct the following fields:</p>
                                         <ul className="mt-2 list-inside list-disc space-y-1">
                                             {errors &&
                                                 Object.entries(errors).map(
@@ -401,9 +400,7 @@ export default function Profile({
                                         <Button
                                             type="button"
                                             variant="secondary"
-                                            onClick={() =>
-                                                setShowErrorModal(false)
-                                            }
+                                            onClick={() => setShowErrorModal(false)}
                                         >
                                             Close
                                         </Button>

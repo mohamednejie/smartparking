@@ -8,6 +8,8 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Illuminate\Contracts\Auth\MustVerifyEmail; // 👈 Ajouter
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
 
 
 class User extends Authenticatable implements MustVerifyEmail
@@ -83,5 +85,26 @@ public function canAddParking(): bool
     if ($this->isBasic() && $this->parkings()->count() >= 3) return false;
     return true;
 }
+public function isDriver(): bool
+    {
+        return $this->role === 'driver';
+    }
+
+public function isOwner(): bool
+    {
+        return $this->role === 'owner';
+    }
+ public function vehicles(): HasMany
+    {
+        return $this->hasMany(Vehicle::class);
+    }
+
+    /**
+     * Get the primary vehicle
+     */
+public function primaryVehicle()
+    {
+        return $this->hasOne(Vehicle::class)->where('is_primary', true);
+    }
 
 }

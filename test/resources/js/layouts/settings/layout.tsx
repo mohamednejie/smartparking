@@ -1,5 +1,6 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import type { PropsWithChildren } from 'react';
+import { Car } from 'lucide-react';
 import Heading from '@/components/heading';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -10,32 +11,66 @@ import { edit as editAppearance } from '@/routes/appearance';
 import { edit } from '@/routes/profile';
 import { show } from '@/routes/two-factor';
 import { edit as editPassword } from '@/routes/user-password';
+import { 
+     
+    User, 
+    Lock, 
+    Shield, 
+    Palette,
+    // Alternatives possibles :
+    // KeyRound, 
+    // Smartphone,
+    // SunMoon,
+    // Settings,
+    // UserCog,
+} from 'lucide-react'
 
-const sidebarNavItems: NavItem[] = [
+// 🔥 Base nav items (pour tous les utilisateurs)
+const baseNavItems: NavItem[] = [
     {
         title: 'Profile',
         href: edit(),
-        icon: null,
+        icon: User,
     },
     {
         title: 'Password',
         href: editPassword(),
-        icon: null,
+        icon: Lock,
     },
     {
         title: 'Two-Factor Auth',
         href: show(),
-        icon: null,
+        icon: Shield,
     },
     {
         title: 'Appearance',
         href: editAppearance(),
-        icon: null,
+        icon: Palette,
     },
 ];
 
 export default function SettingsLayout({ children }: PropsWithChildren) {
     const { isCurrentUrl } = useCurrentUrl();
+    const { auth } = usePage().props as any;
+
+    // 🔥 Vérifier si l'utilisateur est un driver
+    const isDriver = auth?.user?.role === 'driver';
+
+    // 🔥 Construire la liste des items de navigation
+    const sidebarNavItems: NavItem[] = [
+        ...baseNavItems.slice(0, 1), // Profile
+        // 🔥 Ajouter "My Vehicles" seulement pour les drivers
+        ...(isDriver
+            ? [
+                  {
+                      title: 'My Vehicles',
+                      href: '/settings/vehicles',
+                      icon: Car,
+                  },
+              ]
+            : []),
+        ...baseNavItems.slice(1), // Password, Two-Factor, Appearance
+    ];
 
     // When server-side rendering, we only render the layout on the client...
     if (typeof window === 'undefined') {
@@ -67,7 +102,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                             >
                                 <Link href={item.href}>
                                     {item.icon && (
-                                        <item.icon className="h-4 w-4" />
+                                        <item.icon className="h-4 w-4 mr-2" />
                                     )}
                                     {item.title}
                                 </Link>
@@ -79,9 +114,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                 <Separator className="my-6 lg:hidden" />
 
                 <div className="flex-1 md:max-w-2xl">
-                    <section className="max-w-xl space-y-12">
-                        {children}
-                    </section>
+                    <section className="max-w-xl space-y-12">{children}</section>
                 </div>
             </div>
         </div>

@@ -13,6 +13,7 @@ Route::get('/', function () {
     }
     return Inertia::render('welcome' , [
         'ownerCount' => \App\Models\User::where('role', 'owner')->count(),
+        'driverCount' => \App\Models\User::where('role', 'driver')->count(),
     ]);  // ← Affiche welcome au lieu de rediriger vers login
 })->name('home');
 
@@ -27,5 +28,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('parkings/{parking}/toggle-status', [ParkingController::class, 'toggleStatus'])
         ->name('parkings.toggle-status');
 });
+
+
 
 require __DIR__.'/settings.php';

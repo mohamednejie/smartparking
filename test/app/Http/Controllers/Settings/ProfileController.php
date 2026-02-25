@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\Vehicle;
+
 
 class ProfileController extends Controller
 {
@@ -40,6 +42,13 @@ class ProfileController extends Controller
                 'company_name' => $user->company_name,
                 'website'      => $user->website,
             ],
+            'vehicles' => $user->isDriver() 
+                ? $user->vehicles()
+                    ->orderByDesc('is_primary')
+                    ->orderByDesc('created_at')
+                    ->get() 
+                : [],
+            'vehicleTypes' => Vehicle::getTypes(),
         ]);
     }
 
