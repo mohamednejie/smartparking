@@ -23,9 +23,14 @@ const mainNavItems: NavItem[] = [
         href: dashboard(), // NavMain peut utiliser router.visit(href)
         icon: LayoutGrid,
     },
-      {
+    {
         title: 'My Parkings',
         href: '/parkings',
+        icon: Car,
+    },
+    {
+        title: 'Booking',
+        href: 'parkings/available',
         icon: Car,
     },
 ];

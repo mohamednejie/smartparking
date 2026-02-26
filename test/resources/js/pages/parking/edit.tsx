@@ -26,6 +26,7 @@ type Props = {
         closing_time: string | null;
         is_24h: boolean;
         photo_url: string | null;
+        city: string;
     };
 };
 
@@ -45,6 +46,7 @@ export default function EditParking({ parking }: Props) {
         closing_time: parking.closing_time || '',
         is_24h: parking.is_24h,
         photo: null as File | null,
+        city: parking.city || '',
     });
 
     const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
@@ -58,6 +60,9 @@ export default function EditParking({ parking }: Props) {
             case 'name':
                 if (!value.trim()) error = 'Name is required.';
                 break;
+            case 'city':
+                if (!value.trim()) error = 'City is required.';
+                break;    
             case 'latitude':
                 if (!value) error = 'Required.';
                 else if (parseFloat(value) < -90 || parseFloat(value) > 90) error = 'Must be -90 to 90.';
@@ -179,6 +184,20 @@ export default function EditParking({ parking }: Props) {
                             className={getError('name') ? 'border-red-500' : ''}
                         />
                         <InputError message={getError('name')} />
+                    </div>
+                    {/* city */}
+                    <div className="grid gap-2">
+                        <Label> City *</Label>
+                        <Input
+                            value={data.city}
+                            onChange={(e) => {
+                                setData('city', e.target.value);
+                                validateField('city', e.target.value);
+                            }}
+                            onBlur={(e) => validateField('city', e.target.value)}
+                            className={getError('city') ? 'border-red-500' : ''}
+                        />
+                        <InputError message={getError('city')} />
                     </div>
 
                     {/* Description */}

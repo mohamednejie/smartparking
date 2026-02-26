@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 interface Props {
     ownerCount: number;
     driverCount: number;
+    parkingCount: number;
 }
 
 interface Stat {
@@ -67,7 +68,7 @@ function useAnimatedStats(visible: boolean, initialStats: Stat[]): Stat[] {
 }
 
 // ══════════════════════ COMPONENT ══════════════════════
-export default function Welcome({ ownerCount, driverCount }: Props) {
+export default function Welcome({ ownerCount, driverCount ,parkingCount}: Props) {
     const [currentTestimonial, setCurrentTestimonial] = useState(0);
     const [mobileMenu, setMobileMenu] = useState(false);
     // 🔥 État pour basculer entre la vue Driver et Owner
@@ -86,8 +87,8 @@ export default function Welcome({ ownerCount, driverCount }: Props) {
     const stats = useAnimatedStats(statsSection.visible, [
         { value: 0, target: driverCount, suffix: '', label: 'Active Drivers' },
         { value: 0, target: ownerCount, suffix: '', label: 'Parking Owners' },
+        { value: 0, target: parkingCount, suffix: '', label: 'Number of Parkings' },
         { value: 0, target: 24, suffix: '/7', label: 'Availability' },
-        { value: 0, target: 98, suffix: '%', label: 'Satisfaction Rate' },
     ]);
 
     // 🔥 Témoignages pour les deux types d'utilisateurs

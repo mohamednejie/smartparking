@@ -26,6 +26,7 @@ type Props = {
         photo_path: string | null;
         annotated_file_path: string | null;
         created_at: string;
+        city: string | null;
     };
     isPremium: boolean;
 };

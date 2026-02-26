@@ -27,6 +27,7 @@ export default function CreateParking() {
         closing_time: '',
         is_24h: false,
         photo: null as File | null,
+        city: '',
     });
 
     const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -39,6 +40,10 @@ export default function CreateParking() {
         switch (field) {
             case 'name':
                 if (!value.trim()) error = 'Parking name is required.';
+                else if (value.length > 255) error = 'Max 255 characters.';
+                break;
+            case 'city':
+                if (!value.trim()) error = 'Parking city is required.';
                 else if (value.length > 255) error = 'Max 255 characters.';
                 break;
             case 'latitude':
@@ -202,6 +207,23 @@ export default function CreateParking() {
                             className={getError('name') ? 'border-red-500' : ''}
                         />
                         <InputError message={getError('name')} />
+                    </div>
+                     {/* ═══ city ═══ */}
+                    <div className="grid gap-2">
+                        <Label htmlFor="city">City *</Label>
+                        <Input
+                            id="city"
+                            value={data.city}
+
+                            onChange={(e) => {
+                                setData('city', e.target.value);
+                                validateField('city', e.target.value);
+                            }}
+                            onBlur={(e) => validateField('city', e.target.value)}
+                            placeholder="My City"
+                            className={getError('city') ? 'border-red-500' : ''}
+                        />
+                        <InputError message={getError('city')} />
                     </div>
 
                     {/* ═══ Description ═══ */}

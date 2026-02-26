@@ -14,6 +14,7 @@ Route::get('/', function () {
     return Inertia::render('welcome' , [
         'ownerCount' => \App\Models\User::where('role', 'owner')->count(),
         'driverCount' => \App\Models\User::where('role', 'driver')->count(),
+        'parkingCount' => \App\Models\Parking::count(),
     ]);  // ← Affiche welcome au lieu de rediriger vers login
 })->name('home');
 
@@ -24,11 +25,14 @@ Route::get('dashboard', function () {
 
 // Routes parkings (protégées)
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('parkings', ParkingController::class);
     Route::post('parkings/{parking}/toggle-status', [ParkingController::class, 'toggleStatus'])
         ->name('parkings.toggle-status');
+    Route::get('parkings/available', [ParkingController::class, 'available'])
+        ->name('parkings.available');   
+    Route::get('/parkings/suggestions', [ParkingController::class, 'suggestions'])
+    ->name('parkings.suggestions');
+    Route::resource('parkings', ParkingController::class);
+ 
 });
-
-
 
 require __DIR__.'/settings.php';

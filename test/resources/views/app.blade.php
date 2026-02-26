@@ -43,7 +43,7 @@
             }
         </style>
 
-        <title inertia>{{ config('app.name', 'Laravel') }}</title>
+        <title inertia>{{ config('app.name', 'parkingVision Pro') }}</title>
 
          <link rel="icon" href="/image/logo1.png" type="image/png">
 
