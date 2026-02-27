@@ -116,9 +116,7 @@ class ParkingController extends Controller
      */
     public function show(Parking $parking)
     {
-        if ($parking->user_id !== auth()->id()) {
-            abort(403);
-        }
+        
 
         return Inertia::render('parking/show', [
             'parking' => [
@@ -127,6 +125,8 @@ class ParkingController extends Controller
                 'annotated_file_url' => $parking->annotated_file_url,
             ],
             'isPremium' => auth()->user()->isPremium(),
+            'isOwner'   => $parking->user_id === auth()->id(),
+
         ]);
     }
 

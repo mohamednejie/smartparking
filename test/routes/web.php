@@ -32,7 +32,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/parkings/suggestions', [ParkingController::class, 'suggestions'])
     ->name('parkings.suggestions');
     Route::resource('parkings', ParkingController::class);
- 
+
+
 });
 
 require __DIR__.'/settings.php';

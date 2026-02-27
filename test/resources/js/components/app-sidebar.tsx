@@ -1,5 +1,5 @@
-import { router } from '@inertiajs/react';
-import { LayoutGrid,Car } from 'lucide-react';
+import { router, usePage } from '@inertiajs/react';
+import { LayoutGrid, Car, CalendarCheck } from 'lucide-react';
 
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -17,25 +17,48 @@ import type { NavItem } from '@/types';
 import AppLogo from './app-logo';
 import { dashboard } from '@/routes';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(), // NavMain peut utiliser router.visit(href)
-        icon: LayoutGrid,
-    },
-    {
-        title: 'My Parkings',
-        href: '/parkings',
-        icon: Car,
-    },
-    {
-        title: 'Booking',
-        href: 'parkings/available',
-        icon: Car,
-    },
-];
+// Adapte ce type à ta structure réelle de props
+type PageProps = {
+    auth: {
+        user: {
+            role: 'owner' | 'driver'; // ou string, ou ton enum
+        };
+    };
+};
 
 export function AppSidebar() {
+    const { auth } = usePage<PageProps>().props;
+    const userRole = auth.user.role;
+
+    // Menu construit en fonction du rôle
+    const mainNavItems: NavItem[] = [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+            icon: LayoutGrid,
+        },
+        // "My Parkings" uniquement pour les owners
+        ...(userRole === 'owner'
+            ? [
+                  {
+                      title: 'My Parkings',
+                      href: '/parkings',
+                      icon: Car,
+                  } as NavItem,
+              ]
+            : []),
+        // "Booking" uniquement pour les drivers
+        ...(userRole === 'driver'
+            ? [
+                  {
+                      title: 'Booking',
+                      href: '/parkings/available', // j’ai ajouté le / manquant
+                      icon: CalendarCheck,
+                  } as NavItem,
+              ]
+            : []),
+    ];
+
     const goToDashboard = () => {
         router.visit(dashboard(), {
             preserveScroll: false,
@@ -49,7 +72,6 @@ export function AppSidebar() {
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
-                        {/* Bouton qui utilise directement le router Inertia */}
                         <SidebarMenuButton
                             size="lg"
                             type="button"
@@ -63,7 +85,6 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                {/* NavMain peut continuer à utiliser Link(href) côté interne */}
                 <NavMain items={mainNavItems} />
             </SidebarContent>
 
