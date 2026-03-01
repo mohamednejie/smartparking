@@ -47,6 +47,7 @@ export default function EditParking({ parking }: Props) {
         is_24h: parking.is_24h,
         photo: null as File | null,
         city: parking.city || '',
+        cancel_time_limit: String(parking.cancel_time_limit || 30),
     });
 
     const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
@@ -62,7 +63,11 @@ export default function EditParking({ parking }: Props) {
                 break;
             case 'city':
                 if (!value.trim()) error = 'City is required.';
-                break;    
+                break;
+            case 'cancel_time_limit':
+                if (!value.trim()) error = 'Cancel time limit is required.';
+                else if (parseInt(value) < 10 || parseInt(value) > 1000) error = 'Must be between 10 and 1000.';
+                break;     
             case 'latitude':
                 if (!value) error = 'Required.';
                 else if (parseFloat(value) < -90 || parseFloat(value) > 90) error = 'Must be -90 to 90.';
@@ -346,7 +351,24 @@ export default function EditParking({ parking }: Props) {
                                     />
                                 </div>
                             </div>
+                            
                         )}
+                         <div className="grid gap-2">
+                            <Label>cancel time limit (minutes) *</Label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={data.cancel_time_limit}
+                                onChange={(e) => {
+                                    setData('cancel_time_limit', e.target.value);
+                                    validateField('cancel_time_limit', e.target.value);
+                                }}
+                                onBlur={(e) => validateField('cancel_time_limit', e.target.value)}
+                                className={getError('cancel_time_limit') ? 'border-red-500' : ''}
+                            />
+                            <InputError message={getError('cancel_time_limit')} />
+                        </div>
                     </div>
 
                     {/* Photo */}

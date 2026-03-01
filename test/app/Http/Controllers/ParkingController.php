@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Parking;
 use App\Models\User;
+use App\Models\Reservation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -81,7 +82,8 @@ class ParkingController extends Controller
             'closing_time'   => ['nullable', 'date_format:H:i'],
             'is_24h'         => ['boolean'],
             'photo'          => ['required', 'image', 'max:4096'],
-            'city'           => ['nullable', 'string', 'max:255'],
+            'city'           => ['required', 'string', 'max:255'],
+            'cancel_time_limit' => ['required', 'integer', 'min:10', 'max:1000'],
         ]);
 
         $photoPath = $request->file('photo')->store('parkings', 'public');
@@ -103,6 +105,7 @@ class ParkingController extends Controller
             'annotated_file_path' => null,
             'status'              => 'active',
             'city'                => $validated['city'] ,
+            'cancel_time_limit'    => $validated['cancel_time_limit'] ?? 30,
         ]);
 
         logger('✅ Parking créé :', $parking->toArray());
@@ -116,18 +119,84 @@ class ParkingController extends Controller
      */
     public function show(Parking $parking)
     {
-        
+        $user = auth()->user();
+
+        // Est-ce que l'utilisateur connecté est le propriétaire de ce parking ?
+        $isOwner = $user && $user->id === $parking->user_id;
+
+        // Exemple : premium si user a un champ is_premium, adapte à ton projet
+        $isPremium = $user && $user->is_premium ?? false;
+
+        // Par défaut : pas de réservations
+        $reservations = [];
+
+        // Si owner -> charger les réservations de CE parking
+        if ($isOwner) {
+            $reservations = Reservation::with(['driver', 'vehicle'])
+                ->where('parking_id', $parking->id)
+                ->latest('reserved_at')
+                ->get()
+                ->map(function (Reservation $r) {
+                    return [
+                        'id'           => $r->id,
+                        'user_name'    => $r->driver?->name ?? '',
+                        'user_avatar'  => $r->driver?->avatar_url ?? '',
+                        'user_email'   => $r->driver?->email ?? '',
+                        'vehicle_plate'=> $r->vehicle?->license_plate ?? '',
+                        'vehicle_brand'=> $r->vehicle?->brand ?? '',
+                        'vehicle_model'=> $r->vehicle?->model ?? '',
+                        // adapte si tu as start_time / end_time, sinon utilise reserved_at
+                        'start_time'   => $r->start_time?->toIso8601String() ?? $r->reserved_at?->toIso8601String(),
+                        'end_time'     => $r->end_time?->toIso8601String() ?? $r->reserved_at?->toIso8601String(),
+                        'status'       => $this->mapStatusForOwner($r->status),
+                        'total_price'  => (float) ($r->total_price ?? 0),
+                        'created_at'   => $r->created_at?->toIso8601String(),
+                    ];
+                })
+                ->values();
+        }
+
+        // Sérialisation du parking (adapte selon ce que tu fais déjà)
+        $parkingResource = [
+            'id'                => $parking->id,
+            'name'              => $parking->name,
+            'description'       => $parking->description,
+            'address_label'     => $parking->address_label,
+            'latitude'          => $parking->latitude,
+            'longitude'         => $parking->longitude,
+            'total_spots'       => $parking->total_spots,
+            'available_spots'   => $parking->available_spots,
+            'detected_cars'     => $parking->detected_cars,
+            'price_per_hour'    => $parking->price_per_hour,
+            'is_24h'            => $parking->is_24h,
+            'opening_time'      => $parking->opening_time,
+            'closing_time'      => $parking->closing_time,
+            'status'            => $parking->status,
+            'photo_url'         => $parking->photo_url,
+            'annotated_file_url'=> $parking->annotated_file_url,
+            'photo_path'        => $parking->photo_path,
+            'annotated_file_path'=> $parking->annotated_file_path,
+            'created_at'        => $parking->created_at?->toIso8601String(),
+            'city'              => $parking->city,
+            'cancel_time_limit' => $parking->cancel_time_limit,
+        ];
 
         return Inertia::render('parking/show', [
-            'parking' => [
-                ...$parking->toArray(),
-                'photo_url'          => $parking->photo_url,
-                'annotated_file_url' => $parking->annotated_file_url,
-            ],
-            'isPremium' => auth()->user()->isPremium(),
-            'isOwner'   => $parking->user_id === auth()->id(),
-
+            'parking'      => $parkingResource,
+            'isPremium'    => $isPremium,
+            'isOwner'      => $isOwner,
+            'reservations' => $reservations,
         ]);
+    }
+    protected function mapStatusForOwner(string $status): string
+    {
+        return match ($status) {
+            'cancelled_auto', 'cancelled_user' => 'cancelled',
+            'pending' => 'pending',
+            'active'  => 'active',
+            'completed' => 'completed',
+            default   => $status,
+        };
     }
 
     /**
@@ -170,6 +239,7 @@ class ParkingController extends Controller
             'is_24h'         => ['boolean'],
             'photo'          => ['nullable', 'image', 'max:4096'],
             'city'           => ['required', 'string', 'max:255'],
+            'cancel_time_limit' => ['required', 'integer', 'min:10', 'max:1000'],
         ]);
 
         if ($request->hasFile('photo')) {
@@ -201,6 +271,7 @@ class ParkingController extends Controller
             'photo_path'          => $validated['photo_path'] ?? $parking->photo_path,
             'annotated_file_path' => $validated['annotated_file_path'] ?? $parking->annotated_file_path,  
             'city'                => $validated['city'] ,
+            'cancel_time_limit'    => $validated['cancel_time_limit'] ?? $parking->cancel_time_limit,
         ]);
 
         logger('✏️ Parking mis à jour :', $parking->fresh()->toArray());
@@ -581,4 +652,7 @@ class ParkingController extends Controller
             $matchedCities->concat($parkings)->take(10)->values()
         );
     }
+
+
+    
 }

@@ -28,6 +28,7 @@ export default function CreateParking() {
         is_24h: false,
         photo: null as File | null,
         city: '',
+        cancel_time_limit: 30,
     });
 
     const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -45,6 +46,10 @@ export default function CreateParking() {
             case 'city':
                 if (!value.trim()) error = 'Parking city is required.';
                 else if (value.length > 255) error = 'Max 255 characters.';
+                break;
+            case 'cancel_time_limit':
+                if (!value) error = 'Cancel time limit is required.';
+                else if (parseInt(value) < 10 || parseInt(value) > 1000) error = 'Must be between 10 and 1000 minutes.';
                 break;
             case 'latitude':
                 if (!value) error = 'Latitude is required.';
@@ -383,6 +388,41 @@ export default function CreateParking() {
                                 </div>
                             </div>
                         )}
+                    </div>
+                    {/* ═══ city ═══ */}
+                    <div className="grid gap-2">
+                        <Label htmlFor="city">City *</Label>
+                        <Input
+                            id="city"
+                            value={data.city}
+
+                            onChange={(e) => {
+                                setData('city', e.target.value);
+                                validateField('city', e.target.value);
+                            }}
+                            onBlur={(e) => validateField('city', e.target.value)}
+                            placeholder="My City"
+                            className={getError('city') ? 'border-red-500' : ''}
+                        />
+                        <InputError message={getError('city')} />
+                    </div>
+
+                    {/* ═══ Cancel Time Limit ═══ */}
+                    <div className="grid gap-2">
+                        <Label htmlFor="cancel_time_limit">Cancel Time Limit (minutes) *</Label>
+                        <Input
+                            id="cancel_time_limit"
+                            type="number"
+                            value={data.cancel_time_limit}
+                            onChange={(e) => {
+                                setData('cancel_time_limit', parseInt(e.target.value) || 0);
+                                validateField('cancel_time_limit', e.target.value);
+                            }}
+                            onBlur={(e) => validateField('cancel_time_limit', e.target.value)}
+                            placeholder="30"
+                            className={getError('cancel_time_limit') ? 'border-red-500' : ''}
+                        />
+                        <InputError message={getError('cancel_time_limit')} />
                     </div>
 
                     {/* ═══ Photo ═══ */}

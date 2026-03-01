@@ -1,7 +1,19 @@
+// resources/js/pages/settings/vehicles.tsx (ou équivalent)
+
 import { Dialog, Transition } from '@headlessui/react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { Fragment, useState, useCallback } from 'react';
-import { Car, Plus, Trash2, Star, Edit2, X, AlertTriangle, Check, AlertCircle } from 'lucide-react';
+import {
+    Car,
+    Plus,
+    Trash2,
+    Star,
+    Edit2,
+    X,
+    AlertTriangle,
+    Check,
+    AlertCircle,
+} from 'lucide-react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -10,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 import type { BreadcrumbItem } from '@/types';
+import { toast } from 'sonner';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Settings', href: '/settings/profile' },
@@ -32,131 +45,144 @@ type PageProps = {
     vehicleTypes: Record<string, string>;
 };
 
-// 🔥 Validation de plaque côté frontend
-// 🔥 Validation de plaque côté frontend (VERSION STRICTE)
-const validateLicensePlate = (plate: string): { isValid: boolean; error: string | null; formatted: string } => {
+// 🔥 Validation de plaque côté frontend (STRICTE)
+const validateLicensePlate = (plate: string): {
+    isValid: boolean;
+    error: string | null;
+    formatted: string;
+} => {
     const original = plate;
     const cleaned = plate.toUpperCase().trim();
-    
-    // Supprimer les caractères non autorisés
     const sanitized = cleaned.replace(/[^A-Z0-9\-\s]/g, '');
-    
-    // Vérifications de base
+
     if (sanitized.length === 0) {
         return { isValid: false, error: null, formatted: '' };
     }
-    
-    // ✅ LONGUEUR MINIMALE: 4 caractères
+
     if (sanitized.length < 4) {
         return { isValid: false, error: 'At least 4 characters required', formatted: sanitized };
     }
-    
+
     if (sanitized.length > 20) {
-        return { isValid: false, error: 'Maximum 20 characters allowed', formatted: sanitized.substring(0, 20) };
+        return {
+            isValid: false,
+            error: 'Maximum 20 characters allowed',
+            formatted: sanitized.substring(0, 20),
+        };
     }
-    
-    // Retirer les séparateurs pour vérification
+
     const cleanedNoSeparators = sanitized.replace(/[\-\s]/g, '');
-    
-    // ✅ VÉRIFIER LA LONGUEUR NETTOYÉE
+
     if (cleanedNoSeparators.length < 4) {
-        return { isValid: false, error: 'Must contain at least 4 letters/numbers', formatted: sanitized };
+        return {
+            isValid: false,
+            error: 'Must contain at least 4 letters/numbers',
+            formatted: sanitized,
+        };
     }
-    
-    // ✅ VÉRIFIER PRÉSENCE DE LETTRES **ET** CHIFFRES
+
     const hasLetters = /[A-Z]/.test(cleanedNoSeparators);
     const hasNumbers = /[0-9]/.test(cleanedNoSeparators);
-    
+
     if (!hasLetters || !hasNumbers) {
-        return { isValid: false, error: 'Must contain both letters AND numbers', formatted: sanitized };
+        return {
+            isValid: false,
+            error: 'Must contain both letters AND numbers',
+            formatted: sanitized,
+        };
     }
-    
-    // ✅ VÉRIFIER MINIMUM 2 LETTRES ET 2 CHIFFRES
+
     const letterCount = (cleanedNoSeparators.match(/[A-Z]/g) || []).length;
     const numberCount = (cleanedNoSeparators.match(/[0-9]/g) || []).length;
-    
+
     if (letterCount < 2 || numberCount < 2) {
-        return { isValid: false, error: 'At least 2 letters and 2 numbers required', formatted: sanitized };
+        return {
+            isValid: false,
+            error: 'At least 2 letters and 2 numbers required',
+            formatted: sanitized,
+        };
     }
-    
-    // Vérifier les plaques interdites
-    const forbiddenPlates = ['TEST', 'FAKE', 'NULL', 'VOID', 'NONE', 'XXX', 'XXXX', 'AAAA', 'ZZZZ', 'POLICE'];
-    
-    if (forbiddenPlates.includes(cleanedNoSeparators)) {
-        return { isValid: false, error: 'This plate is reserved/forbidden', formatted: sanitized };
-    }
-    
-    // Vérifier les caractères répétés
-    if (/(.)\1{4,}/.test(cleanedNoSeparators)) {
-        return { isValid: false, error: 'Too many repeated characters', formatted: sanitized };
-    }
-    
-    // ✅ Vérifier qu'il ne contient pas QUE des lettres ou QUE des chiffres
-    if (/^[A-Z]+$/.test(cleanedNoSeparators) || /^[0-9]+$/.test(cleanedNoSeparators)) {
-        return { isValid: false, error: 'Must mix letters and numbers', formatted: sanitized };
-    }
-    
-    // Patterns valides (STRICTS)
-    const patterns = [
-        // France: AB-123-CD (strict)
-        /^[A-Z]{2}[-\s]?\d{3}[-\s]?[A-Z]{2}$/,
-        
-        // Maroc: formats variés mais minimum 4 caractères
-        /^(\d{3,5}[-\s]?[A-Z]{1,2}[-\s]?\d{1,2})|([A-Z]{2,3}[-\s]?\d{4,6})$/,
-        
-        // Allemagne: M-AB-1234
-        /^[A-Z]{1,3}[-\s][A-Z]{1,2}[-\s]\d{1,4}$/,
-        
-        // UK: AB12 CDE
-        /^[A-Z]{2}\d{2}[-\s]?[A-Z]{3}$/,
-        
-        // USA: 4-8 caractères alphanumériques
-        /^[A-Z0-9]{4,8}$/,
-        
-        // Espagne: 1234-ABC
-        /^\d{4}[-\s]?[A-Z]{3}$/,
-        
-        // Générique STRICT: au moins 2 lettres ET 2 chiffres, 4-20 caractères
-        /^(?=.*[A-Z].*[A-Z])(?=.*\d.*\d)[A-Z0-9\-\s]{4,20}$/,
+
+    const forbiddenPlates = [
+        'TEST',
+        'FAKE',
+        'NULL',
+        'VOID',
+        'NONE',
+        'XXX',
+        'XXXX',
+        'AAAA',
+        'ZZZZ',
+        'POLICE',
     ];
-    
-    const isValidFormat = patterns.some(pattern => pattern.test(sanitized));
-    
-    // Formatage automatique pour la France (AB-123-CD)
+
+    if (forbiddenPlates.includes(cleanedNoSeparators)) {
+        return {
+            isValid: false,
+            error: 'This plate is reserved/forbidden',
+            formatted: sanitized,
+        };
+    }
+
+    if (/(.)\1{4,}/.test(cleanedNoSeparators)) {
+        return {
+            isValid: false,
+            error: 'Too many repeated characters',
+            formatted: sanitized,
+        };
+    }
+
+    if (/^[A-Z]+$/.test(cleanedNoSeparators) || /^[0-9]+$/.test(cleanedNoSeparators)) {
+        return {
+            isValid: false,
+            error: 'Must mix letters and numbers',
+            formatted: sanitized,
+        };
+    }
+
+    const patterns = [
+        /^[A-Z]{2}[-\s]?\d{3}[-\s]?[A-Z]{2}$/, // France
+        /^(\d{3,5}[-\s]?[A-Z]{1,2}[-\s]?\d{1,2})|([A-Z]{2,3}[-\s]?\d{4,6})$/, // Maroc
+        /^[A-Z]{1,3}[-\s][A-Z]{1,2}[-\s]\d{1,4}$/, // Allemagne
+        /^[A-Z]{2}\d{2}[-\s]?[A-Z]{3}$/, // UK
+        /^[A-Z0-9]{4,8}$/, // USA générique
+        /^\d{4}[-\s]?[A-Z]{3}$/, // Espagne
+        /^(?=.*[A-Z].*[A-Z])(?=.*\d.*\d)[A-Z0-9\-\s]{4,20}$/, // générique strict
+    ];
+
+    const isValidFormat = patterns.some((pattern) => pattern.test(sanitized));
+
     let formatted = sanitized;
     const frenchMatch = cleanedNoSeparators.match(/^([A-Z]{2})(\d{3})([A-Z]{2})$/);
     if (frenchMatch) {
         formatted = `${frenchMatch[1]}-${frenchMatch[2]}-${frenchMatch[3]}`;
     }
-    
+
     if (!isValidFormat) {
-        return { 
-            isValid: false, 
-            error: 'Invalid format (e.g., AB-1234, 12-AB-34)', 
-            formatted: sanitized 
+        return {
+            isValid: false,
+            error: 'Invalid format (e.g., AB-1234, 12-AB-34)',
+            formatted: sanitized,
         };
     }
-    
+
     return { isValid: true, error: null, formatted };
 };
+
 // 🔥 Formatage automatique pendant la saisie
 const formatLicensePlateInput = (value: string): string => {
-    // Supprimer les caractères non autorisés
     let formatted = value.toUpperCase().replace(/[^A-Z0-9\-\s]/g, '');
-    
-    // Limiter la longueur
     formatted = formatted.substring(0, 20);
-    
-    // Auto-format pour le pattern français (optionnel)
+
     const noSeparators = formatted.replace(/[\-\s]/g, '');
-    
+
     if (noSeparators.length === 7) {
         const match = noSeparators.match(/^([A-Z]{2})(\d{3})([A-Z]{2})$/);
         if (match) {
             return `${match[1]}-${match[2]}-${match[3]}`;
         }
     }
-    
+
     return formatted;
 };
 
@@ -171,9 +197,11 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
     const [vehicleToDelete, setVehicleToDelete] = useState<Vehicle | null>(null);
     const [deleteProcessing, setDeleteProcessing] = useState(false);
 
-    // 🔥 État pour la validation de la plaque
     const [plateValue, setPlateValue] = useState('');
-    const [plateValidation, setPlateValidation] = useState<{ isValid: boolean; error: string | null }>({ isValid: false, error: null });
+    const [plateValidation, setPlateValidation] = useState<{
+        isValid: boolean
+        error: string | null
+    }>({ isValid: false, error: null });
 
     // ══════════════════════════════════════════════
     // LICENSE PLATE HANDLERS
@@ -182,7 +210,7 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
     const handlePlateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const formatted = formatLicensePlateInput(e.target.value);
         setPlateValue(formatted);
-        
+
         const validation = validateLicensePlate(formatted);
         setPlateValidation({ isValid: validation.isValid, error: validation.error });
     }, []);
@@ -192,6 +220,10 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
     // ══════════════════════════════════════════════
 
     const openAddVehicle = () => {
+        if (vehicles.length >= 5) {
+            toast.error('You have reached the maximum number of vehicles (5).');
+            return;
+        }
         setEditingVehicle(null);
         setPlateValue('');
         setPlateValidation({ isValid: false, error: null });
@@ -214,14 +246,17 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
 
     const handleVehicleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        
-        // Valider la plaque avant soumission
+
         const validation = validateLicensePlate(plateValue);
         if (!validation.isValid) {
-            setPlateValidation({ isValid: false, error: validation.error || 'Invalid license plate' });
+            setPlateValidation({
+                isValid: false,
+                error: validation.error || 'Invalid license plate',
+            });
+            toast.error(validation.error || 'Invalid license plate');
             return;
         }
-        
+
         setVehicleProcessing(true);
 
         const formData = new FormData(e.currentTarget);
@@ -230,7 +265,6 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
             data[key] = value;
         });
 
-        // Utiliser la plaque formatée
         data['license_plate'] = validation.formatted;
         data['is_primary'] = formData.has('is_primary') ? true : false;
 
@@ -242,7 +276,17 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
 
         router[method](url, data, {
             preserveScroll: true,
-            onSuccess: () => closeVehicleModal(),
+            onSuccess: () => {
+                toast.success(
+                    editingVehicle
+                        ? 'Vehicle updated successfully.'
+                        : 'Vehicle added successfully.'
+                );
+                closeVehicleModal();
+            },
+            onError: () => {
+                toast.error('Failed to save vehicle. Please check the form.');
+            },
             onFinish: () => setVehicleProcessing(false),
         });
     };
@@ -268,7 +312,13 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
 
         router.delete(`/settings/vehicles/${vehicleToDelete.id}`, {
             preserveScroll: true,
-            onSuccess: () => closeDeleteModal(),
+            onSuccess: () => {
+                toast.success('Vehicle deleted successfully.');
+                closeDeleteModal();
+            },
+            onError: () => {
+                toast.error('Failed to delete vehicle.');
+            },
             onFinish: () => setDeleteProcessing(false),
         });
     };
@@ -277,15 +327,24 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
         router.patch(
             `/settings/vehicles/${vehicle.id}/primary`,
             {},
-            { preserveScroll: true }
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success('Primary vehicle updated.');
+                },
+                onError: () => {
+                    toast.error('Failed to set primary vehicle.');
+                },
+            }
         );
     };
 
-    // 🔥 Déterminer la couleur de l'input selon la validation
     const getPlateInputClasses = () => {
         if (plateValue.length === 0) return 'border-input';
-        if (plateValidation.isValid) return 'border-green-500 focus:ring-green-500';
-        if (plateValidation.error) return 'border-red-500 focus:ring-red-500';
+        if (plateValidation.isValid)
+            return 'border-green-500 focus:ring-green-500';
+        if (plateValidation.error)
+            return 'border-red-500 focus:ring-red-500';
         return 'border-input';
     };
 
@@ -317,7 +376,9 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                         <div className="flex gap-3">
                             <Car className="h-5 w-5 text-cyan-600 dark:text-cyan-400 flex-shrink-0 mt-0.5" />
                             <div className="text-sm text-cyan-800 dark:text-cyan-300">
-                                <p className="font-semibold">Accepted license plate formats</p>
+                                <p className="font-semibold">
+                                    Accepted license plate formats
+                                </p>
                                 <ul className="mt-1 list-disc list-inside space-y-1 text-cyan-700 dark:text-cyan-400">
                                     <li>France: AB-123-CD</li>
                                     <li>Germany: M-AB-1234</li>
@@ -340,7 +401,8 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                 No vehicles registered
                             </h3>
                             <p className="text-muted-foreground mt-1 mb-6">
-                                Add your first vehicle to start booking parking spots
+                                Add your first vehicle to start booking parking
+                                spots
                             </p>
                             <Button onClick={openAddVehicle}>
                                 <Plus className="h-4 w-4 mr-2" />
@@ -393,7 +455,9 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                             <div>
                                                 <div className="flex items-center gap-2">
                                                     <span className="font-mono text-xl font-bold tracking-wider">
-                                                        {vehicle.license_plate}
+                                                        {
+                                                            vehicle.license_plate
+                                                        }
                                                     </span>
                                                     {vehicle.is_primary && (
                                                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-sm">
@@ -410,7 +474,8 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                                         vehicle.color,
                                                     ]
                                                         .filter(Boolean)
-                                                        .join(' • ') || 'No details added'}
+                                                        .join(' • ') ||
+                                                        'No details added'}
                                                 </p>
                                             </div>
                                         </div>
@@ -420,7 +485,11 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => handleSetPrimary(vehicle)}
+                                                    onClick={() =>
+                                                        handleSetPrimary(
+                                                            vehicle
+                                                        )
+                                                    }
                                                     className="text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50"
                                                 >
                                                     <Star className="h-4 w-4 mr-1" />
@@ -430,14 +499,18 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                onClick={() => openEditVehicle(vehicle)}
+                                                onClick={() =>
+                                                    openEditVehicle(vehicle)
+                                                }
                                             >
                                                 <Edit2 className="h-4 w-4" />
                                             </Button>
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                onClick={() => openDeleteModal(vehicle)}
+                                                onClick={() =>
+                                                    openDeleteModal(vehicle)
+                                                }
                                                 className="text-red-500 hover:text-red-600 hover:bg-red-50"
                                             >
                                                 <Trash2 className="h-4 w-4" />
@@ -451,11 +524,13 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                 </div>
             </SettingsLayout>
 
-            {/* ══════════════════════════════════════════════════════════════ */}
-            {/* MODAL AJOUT/MODIFICATION VÉHICULE                             */}
-            {/* ══════════════════════════════════════════════════════════════ */}
+            {/* MODAL AJOUT/MODIFICATION VÉHICULE */}
             <Transition appear show={showVehicleModal} as={Fragment}>
-                <Dialog as="div" className="relative z-50" onClose={closeVehicleModal}>
+                <Dialog
+                    as="div"
+                    className="relative z-50"
+                    onClose={closeVehicleModal}
+                >
                     <Transition.Child
                         as={Fragment}
                         enter="ease-out duration-200"
@@ -485,7 +560,9 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                         <div className="flex items-center justify-between">
                                             <Dialog.Title className="text-lg font-semibold text-white flex items-center gap-2">
                                                 <Car className="h-5 w-5" />
-                                                {editingVehicle ? 'Edit Vehicle' : 'Add New Vehicle'}
+                                                {editingVehicle
+                                                    ? 'Edit Vehicle'
+                                                    : 'Add New Vehicle'}
                                             </Dialog.Title>
                                             <button
                                                 onClick={closeVehicleModal}
@@ -497,11 +574,17 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                     </div>
 
                                     {/* Form */}
-                                    <form onSubmit={handleVehicleSubmit} className="p-6 space-y-4">
-                                        {/* 🔥 License Plate avec validation en temps réel */}
+                                    <form
+                                        onSubmit={handleVehicleSubmit}
+                                        className="p-6 space-y-4"
+                                    >
+                                        {/* License Plate */}
                                         <div className="grid gap-2">
                                             <Label htmlFor="license_plate">
-                                                License Plate <span className="text-red-500">*</span>
+                                                License Plate{' '}
+                                                <span className="text-red-500">
+                                                    *
+                                                </span>
                                             </Label>
                                             <div className="relative">
                                                 <Input
@@ -515,7 +598,6 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                                     maxLength={20}
                                                     autoComplete="off"
                                                 />
-                                                {/* Icône de validation */}
                                                 {plateValue.length > 0 && (
                                                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
                                                         {plateValidation.isValid ? (
@@ -526,47 +608,59 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                                     </div>
                                                 )}
                                             </div>
-                                            
-                                            {/* Message d'erreur ou aide */}
                                             {plateValidation.error ? (
                                                 <p className="text-sm text-red-500 flex items-center gap-1">
                                                     <AlertCircle className="h-4 w-4" />
                                                     {plateValidation.error}
                                                 </p>
-                                            ) : plateValue.length > 0 && plateValidation.isValid ? (
+                                            ) : plateValue.length > 0 &&
+                                              plateValidation.isValid ? (
                                                 <p className="text-sm text-green-600 flex items-center gap-1">
                                                     <Check className="h-4 w-4" />
                                                     Valid license plate format
                                                 </p>
                                             ) : (
                                                 <p className="text-xs text-muted-foreground">
-                                                    Enter your vehicle's license plate (e.g., AB-123-CD)
+                                                    Enter your vehicle's license
+                                                    plate (e.g., AB-123-CD)
                                                 </p>
                                             )}
-                                            
-                                            <InputError message={errors?.license_plate} />
+
+                                            <InputError
+                                                message={errors?.license_plate}
+                                            />
                                         </div>
 
                                         {/* Brand & Model */}
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="grid gap-2">
-                                                <Label htmlFor="brand">Brand</Label>
+                                                <Label htmlFor="brand">
+                                                    Brand
+                                                </Label>
                                                 <Input
                                                     id="brand"
                                                     name="brand"
                                                     placeholder="Toyota"
-                                                    defaultValue={editingVehicle?.brand ?? ''}
+                                                    defaultValue={
+                                                        editingVehicle?.brand ??
+                                                        ''
+                                                    }
                                                     pattern="[a-zA-Z0-9\s\-]+"
                                                     title="Letters, numbers, spaces and hyphens only"
                                                 />
                                             </div>
                                             <div className="grid gap-2">
-                                                <Label htmlFor="model">Model</Label>
+                                                <Label htmlFor="model">
+                                                    Model
+                                                </Label>
                                                 <Input
                                                     id="model"
                                                     name="model"
                                                     placeholder="Corolla"
-                                                    defaultValue={editingVehicle?.model ?? ''}
+                                                    defaultValue={
+                                                        editingVehicle?.model ??
+                                                        ''
+                                                    }
                                                     pattern="[a-zA-Z0-9\s\-]+"
                                                     title="Letters, numbers, spaces and hyphens only"
                                                 />
@@ -576,42 +670,66 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                         {/* Color & Year */}
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="grid gap-2">
-                                                <Label htmlFor="color">Color</Label>
+                                                <Label htmlFor="color">
+                                                    Color
+                                                </Label>
                                                 <Input
                                                     id="color"
                                                     name="color"
                                                     placeholder="Silver"
-                                                    defaultValue={editingVehicle?.color ?? ''}
+                                                    defaultValue={
+                                                        editingVehicle?.color ??
+                                                        ''
+                                                    }
                                                     pattern="[a-zA-Z\s]+"
                                                     title="Letters and spaces only"
                                                 />
                                             </div>
                                             <div className="grid gap-2">
-                                                <Label htmlFor="year">Year</Label>
+                                                <Label htmlFor="year">
+                                                    Year
+                                                </Label>
                                                 <Input
                                                     id="year"
                                                     name="year"
                                                     type="number"
                                                     placeholder="2023"
-                                                    defaultValue={editingVehicle?.year ?? ''}
+                                                    defaultValue={
+                                                        editingVehicle?.year ??
+                                                        ''
+                                                    }
                                                     min={1900}
-                                                    max={new Date().getFullYear() + 1}
+                                                    max={
+                                                        new Date().getFullYear() +
+                                                        1
+                                                    }
                                                 />
                                             </div>
                                         </div>
 
                                         {/* Type */}
                                         <div className="grid gap-2">
-                                            <Label htmlFor="type">Vehicle Type</Label>
+                                            <Label htmlFor="type">
+                                                Vehicle Type
+                                            </Label>
                                             <select
                                                 id="type"
                                                 name="type"
-                                                defaultValue={editingVehicle?.type ?? ''}
+                                                defaultValue={
+                                                    editingVehicle?.type ?? ''
+                                                }
                                                 className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                             >
-                                                <option value="">Select type...</option>
-                                                {Object.entries(vehicleTypes).map(([value, label]) => (
-                                                    <option key={value} value={value}>
+                                                <option value="">
+                                                    Select type...
+                                                </option>
+                                                {Object.entries(
+                                                    vehicleTypes
+                                                ).map(([value, label]) => (
+                                                    <option
+                                                        key={value}
+                                                        value={value}
+                                                    >
                                                         {label}
                                                     </option>
                                                 ))}
@@ -619,19 +737,23 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                         </div>
 
                                         {/* Set as Primary */}
-                                        {vehicles.length > 0 && !editingVehicle?.is_primary && (
-                                            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                                                <input
-                                                    type="checkbox"
-                                                    id="is_primary"
-                                                    name="is_primary"
-                                                    className="h-4 w-4 rounded border-gray-300 text-cyan-500 focus:ring-cyan-500"
-                                                />
-                                                <Label htmlFor="is_primary" className="font-normal cursor-pointer">
-                                                    Set as primary vehicle
-                                                </Label>
-                                            </div>
-                                        )}
+                                        {vehicles.length > 0 &&
+                                            !editingVehicle?.is_primary && (
+                                                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="is_primary"
+                                                        name="is_primary"
+                                                        className="h-4 w-4 rounded border-gray-300 text-cyan-500 focus:ring-cyan-500"
+                                                    />
+                                                    <Label
+                                                        htmlFor="is_primary"
+                                                        className="font-normal cursor-pointer"
+                                                    >
+                                                        Set as primary vehicle
+                                                    </Label>
+                                                </div>
+                                            )}
 
                                         {/* Actions */}
                                         <div className="flex gap-3 pt-4">
@@ -645,7 +767,10 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                             </Button>
                                             <Button
                                                 type="submit"
-                                                disabled={vehicleProcessing || !plateValidation.isValid}
+                                                disabled={
+                                                    vehicleProcessing ||
+                                                    !plateValidation.isValid
+                                                }
                                                 className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 disabled:opacity-50"
                                             >
                                                 {vehicleProcessing
@@ -663,11 +788,13 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                 </Dialog>
             </Transition>
 
-            {/* ══════════════════════════════════════════════════════════════ */}
-            {/* MODAL DE SUPPRESSION                                          */}
-            {/* ══════════════════════════════════════════════════════════════ */}
+            {/* MODAL DE SUPPRESSION */}
             <Transition appear show={showDeleteModal} as={Fragment}>
-                <Dialog as="div" className="relative z-50" onClose={closeDeleteModal}>
+                <Dialog
+                    as="div"
+                    className="relative z-50"
+                    onClose={closeDeleteModal}
+                >
                     <Transition.Child
                         as={Fragment}
                         enter="ease-out duration-300"
@@ -719,7 +846,9 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                                         <div className="flex-1">
                                                             <div className="flex items-center gap-2">
                                                                 <span className="font-mono text-lg font-bold">
-                                                                    {vehicleToDelete.license_plate}
+                                                                    {
+                                                                        vehicleToDelete.license_plate
+                                                                    }
                                                                 </span>
                                                                 {vehicleToDelete.is_primary && (
                                                                     <span className="rounded-full bg-cyan-500 px-2 py-0.5 text-[10px] font-semibold text-white">
@@ -733,8 +862,11 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                                                     vehicleToDelete.model,
                                                                     vehicleToDelete.year,
                                                                 ]
-                                                                    .filter(Boolean)
-                                                                    .join(' • ') || 'No details'}
+                                                                    .filter(
+                                                                        Boolean
+                                                                    )
+                                                                    .join(' • ') ||
+                                                                    'No details'}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -758,7 +890,9 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                                                 disabled={deleteProcessing}
                                                 className="flex-1 bg-red-600 hover:bg-red-700 text-white"
                                             >
-                                                {deleteProcessing ? 'Deleting...' : 'Delete Vehicle'}
+                                                {deleteProcessing
+                                                    ? 'Deleting...'
+                                                    : 'Delete Vehicle'}
                                             </Button>
                                         </div>
                                     </div>
@@ -769,5 +903,5 @@ export default function Vehicles({ vehicles = [], vehicleTypes = {} }: PageProps
                 </Dialog>
             </Transition>
         </AppLayout>
-    );
+    )
 }

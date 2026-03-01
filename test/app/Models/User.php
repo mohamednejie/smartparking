@@ -106,5 +106,9 @@ public function primaryVehicle()
     {
         return $this->hasOne(Vehicle::class)->where('is_primary', true);
     }
-
+   // Réservations faites par le driver
+public function reservations()
+{
+    return $this->hasMany(Reservation::class);
+}
 }

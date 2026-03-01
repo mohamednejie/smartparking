@@ -5,6 +5,8 @@ use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
 use App\Http\Controllers\ParkingController;
+use App\Http\Controllers\ReservationController;
+
 
 // ✅ Page d'accueil → Welcome (si non connecté) / Dashboard (si connecté)
 Route::get('/', function () {
@@ -32,8 +34,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/parkings/suggestions', [ParkingController::class, 'suggestions'])
     ->name('parkings.suggestions');
     Route::resource('parkings', ParkingController::class);
+});
 
+// Routes réservations (protégées)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/reservations', [ReservationController::class, 'index'])
+        ->name('reservations.index');
 
+    Route::get('/parkings/{parking}/reservations/create', [ReservationController::class, 'create'])
+        ->name('parkings.reservations.create');
+        
+    Route::patch('/reservations/{reservation}/cancel', [ReservationController::class, 'cancel'])
+        ->name('reservations.cancel');
+
+    Route::post('/parkings/{parking}/reservations', [ReservationController::class, 'store'])
+        ->name('parkings.reservations.store');
 });
 
 require __DIR__.'/settings.php';

@@ -1,3 +1,5 @@
+// resources/js/pages/parking/available.tsx
+
 import { Head, router, usePage } from '@inertiajs/react';
 import { useState, useCallback, useEffect } from 'react';
 import {
@@ -23,6 +25,7 @@ import {
     Heart,
     Share2,
     ExternalLink,
+    CalendarCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AppLayout from '@/layouts/app-layout';
@@ -96,7 +99,7 @@ type PageProps = {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
+// HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
 const formatPrice = (price: number): string => {
@@ -128,9 +131,6 @@ const getOccupancyBgColor = (percent: number): string => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ══════════════════════════════════════════════════════════════════════════════
-
 export default function AvailableParkings({
     parkings,
     filters = {},
@@ -139,10 +139,6 @@ export default function AvailableParkings({
     sortOptions = [],
     flash,
 }: PageProps) {
-    // ══════════════════════════════════════════════════════════════════════════
-    // STATE
-    // ══════════════════════════════════════════════════════════════════════════
-
     const { errors } = usePage().props as any;
 
     const [isLoading, setIsLoading] = useState(false);
@@ -151,7 +147,6 @@ export default function AvailableParkings({
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [favorites, setFavorites] = useState<number[]>([]);
 
-    // Local filter state
     const [localFilters, setLocalFilters] = useState({
         q: filters.q || '',
         city: filters.city || '',
@@ -167,7 +162,6 @@ export default function AvailableParkings({
         order: filters.order || 'desc',
     });
 
-    // Default sort options if not provided
     const defaultSortOptions = [
         { value: 'created_at', label: 'Most Recent', order: 'desc' },
         { value: 'price_per_hour', label: 'Price: Low to High', order: 'asc' },
@@ -176,42 +170,27 @@ export default function AvailableParkings({
         { value: 'name', label: 'Name (A-Z)', order: 'asc' },
     ];
 
-    const activeSortOptions = sortOptions.length > 0 ? sortOptions : defaultSortOptions;
+    const activeSortOptions =
+        sortOptions.length > 0 ? sortOptions : defaultSortOptions;
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // EFFECTS - Handle Flash Messages & Errors
-    // ══════════════════════════════════════════════════════════════════════════
-
+    // Flash
     useEffect(() => {
-        // Handle flash messages
         if (flash?.success) {
-            toast.success(flash.success, {
-                icon: '✅',
-                duration: 4000,
-            });
+            toast.success(flash.success, { icon: '✅', duration: 4000 });
         }
         if (flash?.error) {
-            toast.error(flash.error, {
-                icon: '❌',
-                duration: 6000,
-            });
+            toast.error(flash.error, { icon: '❌', duration: 6000 });
         }
         if (flash?.warning) {
-            toast.warning(flash.warning, {
-                icon: '⚠️',
-                duration: 5000,
-            });
+            toast.warning(flash.warning, { icon: '⚠️', duration: 5000 });
         }
         if (flash?.info) {
-            toast.info(flash.info, {
-                icon: 'ℹ️',
-                duration: 4000,
-            });
+            toast.info(flash.info, { icon: 'ℹ️', duration: 4000 });
         }
     }, [flash]);
 
+    // Errors
     useEffect(() => {
-        // Handle validation errors
         if (errors && Object.keys(errors).length > 0) {
             Object.entries(errors).forEach(([field, message]) => {
                 toast.error(message as string, {
@@ -222,42 +201,40 @@ export default function AvailableParkings({
         }
     }, [errors]);
 
-    // Load favorites from localStorage
+    // Favorites from localStorage
     useEffect(() => {
         const savedFavorites = localStorage.getItem('parking_favorites');
         if (savedFavorites) {
             try {
                 setFavorites(JSON.parse(savedFavorites));
             } catch {
-                // Invalid JSON, ignore
+                // ignore
             }
         }
     }, []);
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // SEARCH & FILTER HANDLERS
-    // ══════════════════════════════════════════════════════════════════════════
-
+    // SEARCH & FILTERS
     const performSearch = useCallback((newFilters: typeof localFilters) => {
         setIsLoading(true);
 
-        // Clean empty filters
         const cleanFilters = Object.fromEntries(
-            Object.entries(newFilters).filter(([_, v]) => v !== '' && v !== null && v !== false)
+            Object.entries(newFilters).filter(
+                ([_, v]) => v !== '' && v !== null && v !== false
+            )
         );
 
         router.get('/parkings/available', cleanFilters, {
-    preserveState: true,
-    preserveScroll: true,
-    onSuccess: () => {
-        
-    },
-    onError: (errors) => {
-        toast.error('Failed to load parkings', { description: 'Please try again later', duration: 5000 });
-        console.error('Search error:', errors);
-    },
-    onFinish: () => setIsLoading(false),
-});;
+            preserveState: true,
+            preserveScroll: true,
+            onError: (errors) => {
+                toast.error('Failed to load parkings', {
+                    description: 'Please try again later',
+                    duration: 5000,
+                });
+                console.error('Search error:', errors);
+            },
+            onFinish: () => setIsLoading(false),
+        });
     }, []);
 
     const debouncedSearch = useCallback(
@@ -308,10 +285,7 @@ export default function AvailableParkings({
         performSearch(newFilters);
     };
 
-    // ══════════════════════════════════════════════════════════════════════════
     // GEOLOCATION
-    // ══════════════════════════════════════════════════════════════════════════
-
     const getCurrentLocation = () => {
         if (!navigator.geolocation) {
             toast.error('Geolocation not supported', {
@@ -345,7 +319,7 @@ export default function AvailableParkings({
             (error) => {
                 setIsLocating(false);
                 let errorMessage = 'Unable to get your location';
-                
+
                 switch (error.code) {
                     case error.PERMISSION_DENIED:
                         errorMessage = 'Location permission denied';
@@ -357,10 +331,11 @@ export default function AvailableParkings({
                         errorMessage = 'Location request timed out';
                         break;
                 }
-                
+
                 toast.error(errorMessage, {
                     id: 'location',
-                    description: 'Please enable location services and try again',
+                    description:
+                        'Please enable location services and try again',
                     duration: 5000,
                 });
             },
@@ -385,18 +360,18 @@ export default function AvailableParkings({
         toast.info('Location filter cleared', { duration: 2000 });
     };
 
-    // ══════════════════════════════════════════════════════════════════════════
     // FAVORITES
-    // ══════════════════════════════════════════════════════════════════════════
-
     const toggleFavorite = (parkingId: number, parkingName: string) => {
         setFavorites((prev) => {
             const newFavorites = prev.includes(parkingId)
                 ? prev.filter((id) => id !== parkingId)
                 : [...prev, parkingId];
-            
-            localStorage.setItem('parking_favorites', JSON.stringify(newFavorites));
-            
+
+            localStorage.setItem(
+                'parking_favorites',
+                JSON.stringify(newFavorites)
+            );
+
             if (newFavorites.includes(parkingId)) {
                 toast.success(`Added to favorites`, {
                     description: parkingName,
@@ -409,18 +384,17 @@ export default function AvailableParkings({
                     duration: 2000,
                 });
             }
-            
+
             return newFavorites;
         });
     };
 
-    // ══════════════════════════════════════════════════════════════════════════
     // SHARE
-    // ══════════════════════════════════════════════════════════════════════════
-
     const shareParking = async (parking: Parking) => {
         const url = `${window.location.origin}/parkings/${parking.id}`;
-        const text = `Check out ${parking.name} - ${parking.available_spots} spots available at ${formatPrice(parking.price_per_hour)}/hour`;
+        const text = `Check out ${parking.name} - ${parking.available_spots} spots available at ${formatPrice(
+            parking.price_per_hour
+        )}/hour`;
 
         if (navigator.share) {
             try {
@@ -437,20 +411,20 @@ export default function AvailableParkings({
     };
 
     const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text).then(() => {
-            toast.success('Link copied to clipboard!', {
-                icon: '📋',
-                duration: 2000,
+        navigator.clipboard
+            .writeText(text)
+            .then(() => {
+                toast.success('Link copied to clipboard!', {
+                    icon: '📋',
+                    duration: 2000,
+                });
+            })
+            .catch(() => {
+                toast.error('Failed to copy link', { duration: 2000 });
             });
-        }).catch(() => {
-            toast.error('Failed to copy link', { duration: 2000 });
-        });
     };
 
-    // ══════════════════════════════════════════════════════════════════════════
     // REFRESH
-    // ══════════════════════════════════════════════════════════════════════════
-
     const refreshData = () => {
         setIsLoading(true);
         toast.loading('Refreshing...', { id: 'refresh' });
@@ -473,10 +447,6 @@ export default function AvailableParkings({
         });
     };
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // COMPUTED VALUES
-    // ══════════════════════════════════════════════════════════════════════════
-
     const hasLocation = localFilters.latitude && localFilters.longitude;
     const activeFiltersCount = [
         localFilters.city,
@@ -487,19 +457,13 @@ export default function AvailableParkings({
         localFilters.open_now,
     ].filter(Boolean).length;
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // RENDER
-    // ══════════════════════════════════════════════════════════════════════════
-
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Available Parkings" />
 
             <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    {/* ════════════════════════════════════════════════════════════ */}
-                    {/* HEADER                                                      */}
-                    {/* ════════════════════════════════════════════════════════════ */}
+                    {/* HEADER */}
                     <div className="mb-8">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
@@ -517,13 +481,16 @@ export default function AvailableParkings({
                                 disabled={isLoading}
                                 className="self-start sm:self-auto"
                             >
-                                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                                <RefreshCw
+                                    className={`h-4 w-4 mr-2 ${
+                                        isLoading ? 'animate-spin' : ''
+                                    }`}
+                                />
                                 Refresh
                             </Button>
                         </div>
                     </div>
-
-                    {/* ════════════════════════════════════════════════════════════ */}
+ {/* ════════════════════════════════════════════════════════════ */}
                     {/* SEARCH BAR                                                  */}
                     {/* ════════════════════════════════════════════════════════════ */}
                     <div className="bg-card border rounded-2xl p-4 sm:p-6 mb-6 shadow-sm">
@@ -803,9 +770,9 @@ export default function AvailableParkings({
                         </div>
                     </div>
 
-                    {/* ════════════════════════════════════════════════════════════ */}
-                    {/* RESULTS                                                     */}
-                    {/* ════════════════════════════════════════════════════════════ */}
+
+
+                    {/* RESULTS */}
                     {parkings.data.length === 0 ? (
                         <EmptyState onReset={resetFilters} />
                     ) : (
@@ -822,18 +789,21 @@ export default function AvailableParkings({
                                     parking={parking}
                                     viewMode={viewMode}
                                     isFavorite={favorites.includes(parking.id)}
-                                    onToggleFavorite={() => toggleFavorite(parking.id, parking.name)}
+                                    onToggleFavorite={() =>
+                                        toggleFavorite(parking.id, parking.name)
+                                    }
                                     onShare={() => shareParking(parking)}
                                 />
                             ))}
                         </div>
                     )}
 
-                    {/* ════════════════════════════════════════════════════════════ */}
-                    {/* PAGINATION                                                  */}
-                    {/* ════════════════════════════════════════════════════════════ */}
+                    {/* PAGINATION */}
                     {parkings.last_page > 1 && (
-                        <Pagination links={parkings.links} currentPage={parkings.current_page} />
+                        <Pagination
+                            links={parkings.links}
+                            currentPage={parkings.current_page}
+                        />
                     )}
                 </div>
             </div>
@@ -858,13 +828,19 @@ function ParkingCard({
     onToggleFavorite: () => void;
     onShare: () => void;
 }) {
-    const occupancyPercent = parking.total_spots > 0
-        ? Math.round(((parking.total_spots - parking.available_spots) / parking.total_spots) * 100)
-        : 0;
+    const occupancyPercent =
+        parking.total_spots > 0
+            ? Math.round(
+                  ((parking.total_spots - parking.available_spots) /
+                      parking.total_spots) *
+                      100
+              )
+            : 0;
 
     const isOpen = parking.is_24h || parking.is_open_now;
 
     if (viewMode === 'list') {
+        // ----- LIST VIEW (inchangée) -----
         return (
             <div className="group flex flex-col sm:flex-row gap-4 bg-card border rounded-xl p-4 hover:shadow-lg hover:border-primary/20 transition-all duration-300">
                 {/* Image */}
@@ -880,7 +856,7 @@ function ParkingCard({
                             <Car className="h-10 w-10 text-muted-foreground/30" />
                         </div>
                     )}
-                    
+
                     {/* Status Badge */}
                     <div className="absolute top-2 left-2">
                         <span
@@ -890,7 +866,9 @@ function ParkingCard({
                                     : 'bg-red-500/90 text-white'
                             }`}
                         >
-                            {parking.available_spots > 0 ? `${parking.available_spots} spots` : 'Full'}
+                            {parking.available_spots > 0
+                                ? `${parking.available_spots} spots`
+                                : 'Full'}
                         </span>
                     </div>
                 </div>
@@ -904,7 +882,9 @@ function ParkingCard({
                             </h3>
                             <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                                 <MapPin className="h-4 w-4 flex-shrink-0" />
-                                <span className="truncate">{parking.city || parking.address_label}</span>
+                                <span className="truncate">
+                                    {parking.city || parking.address_label}
+                                </span>
                             </p>
                         </div>
 
@@ -913,13 +893,21 @@ function ParkingCard({
                             <div className="text-xl font-bold text-primary">
                                 {formatPrice(parking.price_per_hour)}
                             </div>
-                            <span className="text-xs text-muted-foreground">/hour</span>
+                            <span className="text-xs text-muted-foreground">
+                                /hour
+                            </span>
                         </div>
                     </div>
 
                     {/* Info Row */}
                     <div className="flex flex-wrap items-center gap-3 mt-3 text-sm">
-                        <span className={parking.available_spots > 0 ? 'text-green-600' : 'text-red-600'}>
+                        <span
+                            className={
+                                parking.available_spots > 0
+                                    ? 'text-green-600'
+                                    : 'text-red-600'
+                            }
+                        >
                             <Car className="h-4 w-4 inline mr-1" />
                             {parking.available_spots}/{parking.total_spots}
                         </span>
@@ -931,20 +919,36 @@ function ParkingCard({
                             </span>
                         )}
 
-                        <span className={isOpen ? 'text-green-600' : 'text-red-600'}>
+                        <span
+                            className={
+                                isOpen ? 'text-green-600' : 'text-red-600'
+                            }
+                        >
                             <Clock className="h-4 w-4 inline mr-1" />
-                            {parking.is_24h ? '24/7' : isOpen ? 'Open' : 'Closed'}
+                            {parking.is_24h
+                                ? '24/7'
+                                : isOpen
+                                ? 'Open'
+                                : 'Closed'}
                         </span>
 
                         {/* Occupancy Bar */}
                         <div className="flex items-center gap-2">
                             <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                                 <div
-                                    className={`h-full ${getOccupancyBgColor(occupancyPercent)} transition-all`}
-                                    style={{ width: `${occupancyPercent}%` }}
+                                    className={`h-full ${getOccupancyBgColor(
+                                        occupancyPercent
+                                    )} transition-all`}
+                                    style={{
+                                        width: `${occupancyPercent}%`,
+                                    }}
                                 />
                             </div>
-                            <span className={`text-xs ${getOccupancyColor(occupancyPercent)}`}>
+                            <span
+                                className={`text-xs ${getOccupancyColor(
+                                    occupancyPercent
+                                )}`}
+                            >
                                 {occupancyPercent}%
                             </span>
                         </div>
@@ -960,7 +964,9 @@ function ParkingCard({
                         >
                             <Heart
                                 className={`h-4 w-4 transition-colors ${
-                                    isFavorite ? 'fill-red-500 text-red-500' : ''
+                                    isFavorite
+                                        ? 'fill-red-500 text-red-500'
+                                        : ''
                                 }`}
                             />
                         </Button>
@@ -985,16 +991,16 @@ function ParkingCard({
         );
     }
 
-    // Grid View
+    // ----- GRID VIEW : avec bouton Booking sur l’image -----
     return (
         <div className="group bg-card border rounded-2xl overflow-hidden hover:shadow-xl hover:border-primary/20 transition-all duration-300 hover:-translate-y-1">
             {/* Image */}
-            <div className="relative h-48 bg-muted overflow-hidden">
+            <div className="relative h-48 bg-muted overflow-hidden group/image">
                 {parking.photo_url ? (
                     <img
                         src={parking.photo_url}
                         alt={parking.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        className="w-full h-full object-cover group-hover/image:scale-110 transition-transform duration-500"
                     />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
@@ -1002,11 +1008,11 @@ function ParkingCard({
                     </div>
                 )}
 
-                {/* Overlay Badges */}
+                {/* Overlay gradient */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
                 {/* Top Right Actions */}
-                <div className="absolute top-3 right-3 flex gap-2">
+                <div className="absolute top-3 right-3 flex gap-2 z-20">
                     <Button
                         variant="secondary"
                         size="icon"
@@ -1015,7 +1021,9 @@ function ParkingCard({
                     >
                         <Heart
                             className={`h-4 w-4 transition-colors ${
-                                isFavorite ? 'fill-red-500 text-red-500' : ''
+                                isFavorite
+                                    ? 'fill-red-500 text-red-500'
+                                    : ''
                             }`}
                         />
                     </Button>
@@ -1031,14 +1039,14 @@ function ParkingCard({
 
                 {/* Top Left Badge - Distance */}
                 {parking.distance_text && (
-                    <span className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1">
+                    <span className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1 z-20">
                         <Navigation className="h-3 w-3" />
                         {parking.distance_text}
                     </span>
                 )}
 
                 {/* Bottom Left - Availability */}
-                <div className="absolute bottom-3 left-3">
+                <div className="absolute bottom-3 left-3 z-20">
                     <span
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shadow-lg ${
                             parking.available_spots > 0
@@ -1047,12 +1055,14 @@ function ParkingCard({
                         }`}
                     >
                         <Car className="h-3.5 w-3.5" />
-                        {parking.available_spots > 0 ? `${parking.available_spots} Available` : 'Full'}
+                        {parking.available_spots > 0
+                            ? `${parking.available_spots} Available`
+                            : 'Full'}
                     </span>
                 </div>
 
                 {/* Bottom Right - Open Status */}
-                <div className="absolute bottom-3 right-3">
+                <div className="absolute bottom-3 right-3 z-20">
                     <span
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                             isOpen
@@ -1060,9 +1070,30 @@ function ParkingCard({
                                 : 'bg-red-500/20 text-red-100 backdrop-blur-sm'
                         }`}
                     >
-                        <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
+                        <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                                isOpen ? 'bg-green-400' : 'bg-red-400'
+                            } animate-pulse`}
+                        />
                         {parking.is_24h ? '24/7' : isOpen ? 'Open' : 'Closed'}
                     </span>
+                </div>
+
+                {/* BOUTON BOOKING SUR L'IMAGE (animation pro) */}
+                <div className="absolute inset-0 flex items-end justify-center pb-4 opacity-0 translate-y-4 group-hover/image:opacity-100 group-hover/image:translate-y-0 transition-all duration-300 ease-out pointer-events-none z-30">
+                    <Button
+                        size="sm"
+                        className="bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-black/40 rounded-full px-4 py-2 flex items-center gap-2 pointer-events-auto"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            router.visit(
+                                `/parkings/${parking.id}/reservations/create`
+                            );
+                        }}
+                    >
+                        <CalendarCheck className="h-4 w-4" />
+                        Booking
+                    </Button>
                 </div>
             </div>
 
@@ -1081,18 +1112,26 @@ function ParkingCard({
 
                 <p className="text-sm text-muted-foreground flex items-center gap-1 mb-3">
                     <MapPin className="h-4 w-4 flex-shrink-0" />
-                    <span className="truncate">{parking.city || parking.address_label}</span>
+                    <span className="truncate">
+                        {parking.city || parking.address_label}
+                    </span>
                 </p>
 
                 {/* Occupancy Bar */}
                 <div className="mb-4">
                     <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-muted-foreground">Occupancy</span>
-                        <span className={getOccupancyColor(occupancyPercent)}>{occupancyPercent}%</span>
+                        <span className="text-muted-foreground">
+                            Occupancy
+                        </span>
+                        <span className={getOccupancyColor(occupancyPercent)}>
+                            {occupancyPercent}%
+                        </span>
                     </div>
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
-                            className={`h-full ${getOccupancyBgColor(occupancyPercent)} transition-all duration-500`}
+                            className={`h-full ${getOccupancyBgColor(
+                                occupancyPercent
+                            )} transition-all duration-500`}
                             style={{ width: `${occupancyPercent}%` }}
                         />
                     </div>
@@ -1104,7 +1143,9 @@ function ParkingCard({
                         <span className="text-2xl font-bold text-primary">
                             {formatPrice(parking.price_per_hour)}
                         </span>
-                        <span className="text-xs text-muted-foreground ml-1">/hour</span>
+                        <span className="text-xs text-muted-foreground ml-1">
+                            /hour
+                        </span>
                     </div>
 
                     <Button asChild className="rounded-xl">
@@ -1120,7 +1161,7 @@ function ParkingCard({
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// EMPTY STATE COMPONENT
+// EMPTY STATE
 // ══════════════════════════════════════════════════════════════════════════════
 
 function EmptyState({ onReset }: { onReset: () => void }) {
@@ -1132,8 +1173,8 @@ function EmptyState({ onReset }: { onReset: () => void }) {
                 </div>
                 <h3 className="text-2xl font-bold mb-2">No parkings found</h3>
                 <p className="text-muted-foreground mb-8">
-                    We couldn't find any parkings matching your criteria. 
-                    Try adjusting your filters or expanding your search area.
+                    We couldn't find any parkings matching your criteria. Try
+                    adjusting your filters or expanding your search area.
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center gap-3">
                     <Button variant="outline" onClick={onReset}>
@@ -1153,10 +1194,16 @@ function EmptyState({ onReset }: { onReset: () => void }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PAGINATION COMPONENT
+// PAGINATION
 // ══════════════════════════════════════════════════════════════════════════════
 
-function Pagination({ links, currentPage }: { links: PaginationLink[]; currentPage: number }) {
+function Pagination({
+    links,
+    currentPage,
+}: {
+    links: PaginationLink[];
+    currentPage: number;
+}) {
     const handlePageClick = (url: string | null) => {
         if (!url) return;
 
@@ -1173,7 +1220,9 @@ function Pagination({ links, currentPage }: { links: PaginationLink[]; currentPa
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
                 onError: () => {
-                    toast.error('Failed to load page', { id: 'pagination' });
+                    toast.error('Failed to load page', {
+                        id: 'pagination',
+                    });
                 },
             }
         );
@@ -1183,9 +1232,12 @@ function Pagination({ links, currentPage }: { links: PaginationLink[]; currentPa
         <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
             <div className="flex items-center gap-1">
                 {links.map((link, index) => {
-                    // Skip "Previous" and "Next" text links
-                    const isPrev = link.label.includes('Previous') || link.label.includes('&laquo;');
-                    const isNext = link.label.includes('Next') || link.label.includes('&raquo;');
+                    const isPrev =
+                        link.label.includes('Previous') ||
+                        link.label.includes('&laquo;');
+                    const isNext =
+                        link.label.includes('Next') ||
+                        link.label.includes('&raquo;');
 
                     if (isPrev) {
                         return (
@@ -1217,7 +1269,6 @@ function Pagination({ links, currentPage }: { links: PaginationLink[]; currentPa
                         );
                     }
 
-                    // Numeric page buttons
                     return (
                         <Button
                             key={index}

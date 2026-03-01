@@ -1,5 +1,5 @@
 import { router, usePage } from '@inertiajs/react';
-import { LayoutGrid, Car, CalendarCheck } from 'lucide-react';
+import { LayoutGrid, Car, CalendarCheck,ClipboardList  } from 'lucide-react';
 
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -45,6 +45,7 @@ export function AppSidebar() {
                       href: '/parkings',
                       icon: Car,
                   } as NavItem,
+                  
               ]
             : []),
         // "Booking" uniquement pour les drivers
@@ -52,9 +53,14 @@ export function AppSidebar() {
             ? [
                   {
                       title: 'Booking',
-                      href: '/parkings/available', // j’ai ajouté le / manquant
+                      href: '/parkings/available',
                       icon: CalendarCheck,
                   } as NavItem,
+                  {
+    title: 'My Reservations',
+    href: '/reservations',
+    icon: ClipboardList,
+} as NavItem,
               ]
             : []),
     ];

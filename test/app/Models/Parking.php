@@ -29,8 +29,8 @@ class Parking extends Model
         'annotated_file_path',
         'status',
         'city',
+        'cancel_time_limit',
     ];
-
     protected function casts(): array
     {
         return [
@@ -38,6 +38,7 @@ class Parking extends Model
             'longitude'      => 'decimal:7',
             'price_per_hour' => 'decimal:2',
             'is_24h'         => 'boolean',
+            'cancel_time_limit'  => 'integer',
         ];
     }
 
@@ -45,6 +46,8 @@ class Parking extends Model
     {
         return $this->belongsTo(User::class, 'user_id');
     }
+
+    
 
     public function getPhotoUrlAttribute(): ?string
     {
@@ -159,4 +162,15 @@ class Parking extends Model
         }
         return $query;
     }
+    public function getCancelTimeTextAttribute(): string
+{
+    return $this->cancel_time_limit . ' minutes before start';
+}
+
+
+public function reservations()
+{
+    return $this->hasMany(Reservation::class);
+}
+
 }
