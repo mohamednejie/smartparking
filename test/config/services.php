@@ -42,5 +42,21 @@ return [
         'token' => env('HF_API_TOKEN'),
         'model' => env('HF_API_MODEL', 'nateraw/vit-base-patch16-224-places365'),
     ],
+    'paymee' => [
+        'api_key'  => env('PAYMEE_API_KEY'),
+        'base_url' => env('PAYMEE_BASE_URL', 'https://sandbox.paymee.tn/api/v2'),
+    ],
+    'paypal' => [
+    'client_id' => env('PAYPAL_CLIENT_ID'),
+    'secret'    => env('PAYPAL_SECRET'),
+    'base_url'  => env('PAYPAL_BASE_URL'),
+    ],
+
+    'braintree' => [
+    'merchant_id' => env('BRAINTREE_MERCHANT_ID'),
+    'public_key' => env('BRAINTREE_PUBLIC_KEY'),
+    'private_key' => env('BRAINTREE_PRIVATE_KEY'),
+    'environment' => env('BRAINTREE_ENVIRONMENT'),
+    ],
 
 ];

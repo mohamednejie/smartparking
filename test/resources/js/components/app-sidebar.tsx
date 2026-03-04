@@ -1,5 +1,5 @@
 import { router, usePage } from '@inertiajs/react';
-import { LayoutGrid, Car, CalendarCheck,ClipboardList  } from 'lucide-react';
+import { LayoutGrid, Car, CalendarCheck,ClipboardList,Crown  } from 'lucide-react';
 
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -44,6 +44,11 @@ export function AppSidebar() {
                       title: 'My Parkings',
                       href: '/parkings',
                       icon: Car,
+                  } as NavItem,
+                    {
+                      title: 'upgrade to premium',
+                      href: '/payment',
+                      icon: Crown,
                   } as NavItem,
                   
               ]

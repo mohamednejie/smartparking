@@ -1,4 +1,5 @@
 // resources/js/pages/parking/reserve.tsx
+import { router } from '@inertiajs/react'
 
 import { useEffect, useState } from 'react'
 import { Head, Link, useForm, usePage } from '@inertiajs/react'
@@ -350,54 +351,64 @@ export default function Reserve({
 
             {/* Modal de succès + compte à rebours */}
             <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                            <span>Reservation created</span>
-                        </DialogTitle>
-                        <DialogDescription className="space-y-2">
-                            <p>
-                                Your reservation has been created successfully.
-                            </p>
-                            {parking.cancel_time_limit !== null && (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                    <Clock className="h-4 w-4 text-amber-500" />
-                                    <span>
-                                        Time remaining before automatic
-                                        cancellation (if you do not enter the
-                                        parking):{' '}
-                                        <span className="font-semibold text-slate-900">
-                                            {formatRemaining(remainingMs)}
-                                        </span>
-                                    </span>
-                                </p>
-                            )}
-                        </DialogDescription>
-                    </DialogHeader>
+  <DialogContent className="max-w-md">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2">
+        <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+        <span>Reservation created</span>
+      </DialogTitle>
+      <DialogDescription className="space-y-2">
+        <p>Your reservation has been created successfully.</p>
+        {parking.cancel_time_limit !== null && (
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <Clock className="h-4 w-4 text-amber-500" />
+            <span>
+              Time remaining before automatic cancellation (if you do not enter
+              the parking):{' '}
+              <span className="font-semibold text-slate-900">
+                {formatRemaining(remainingMs)}
+              </span>
+            </span>
+          </p>
+        )}
+      </DialogDescription>
+    </DialogHeader>
 
-                    <div className="mt-4 flex justify-end gap-2">
-                        <Link href="/reservations">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="inline-flex items-center gap-1"
-                            >
-                                <CarFront className="h-4 w-4" />
-                                My reservations
-                            </Button>
-                        </Link>
-                        <Button
-                            size="sm"
-                            className="inline-flex items-center gap-1"
-                            onClick={() => setShowSuccessModal(false)}
-                        >
-                            <XCircle className="h-4 w-4" />
-                            Close
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
+    <div className="mt-4 flex justify-end gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        className="inline-flex items-center gap-1"
+        onClick={() => {
+          router.visit('/reservations', {
+            // on force un nouveau GET complet
+            preserveScroll: false,
+            preserveState: false,
+            onSuccess: () => {
+              setShowSuccessModal(false)
+              // optionnel : toast sur la page des réservations
+              toast.success('Reservation created', {
+                description: 'Your reservation has been added to the list.',
+              })
+            },
+          })
+        }}
+      >
+        <CarFront className="h-4 w-4" />
+        My reservations
+      </Button>
+
+      <Button
+        size="sm"
+        className="inline-flex items-center gap-1"
+        onClick={() => setShowSuccessModal(false)}
+      >
+        <XCircle className="h-4 w-4" />
+        Close
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
         </AppLayout>
     )
 }

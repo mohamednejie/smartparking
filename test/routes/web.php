@@ -43,12 +43,30 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/parkings/{parking}/reservations/create', [ReservationController::class, 'create'])
         ->name('parkings.reservations.create');
-        
+
     Route::patch('/reservations/{reservation}/cancel', [ReservationController::class, 'cancel'])
         ->name('reservations.cancel');
 
     Route::post('/parkings/{parking}/reservations', [ReservationController::class, 'store'])
         ->name('parkings.reservations.store');
+});
+
+
+
+
+
+
+use App\Http\Controllers\BraintreeController;
+
+Route::middleware(['auth'])->group(function () {
+
+    Route::get('/payment', function () {
+        return Inertia::render('BraintreePayment');
+    });
+
+    Route::get('/braintree/token', [BraintreeController::class, 'token']);
+    Route::post('/braintree/checkout', [BraintreeController::class, 'checkout']);
+
 });
 
 require __DIR__.'/settings.php';
