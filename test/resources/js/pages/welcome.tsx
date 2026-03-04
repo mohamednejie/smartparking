@@ -860,8 +860,7 @@ export default function Welcome({ ownerCount, driverCount ,parkingCount}: Props)
                             <div className="text-4xl mb-4">🅿️</div>
                             <div className="text-sm text-emerald-400 uppercase tracking-widest mb-2">Owner Basic</div>
                             <div className="flex items-baseline gap-2 mb-2">
-                                <span className="text-5xl font-bold text-white">$0</span>
-                                <span className="text-gray-500">/month</span>
+                                <span className="text-5xl font-bold text-white">Free</span>
                             </div>
                             <p className="text-gray-400 mb-8">Detection without annotation. Up to 3 locations.</p>
 
@@ -903,7 +902,7 @@ export default function Welcome({ ownerCount, driverCount ,parkingCount}: Props)
                             <div className="text-4xl mb-4">👑</div>
                             <div className="text-sm text-violet-400 uppercase tracking-widest mb-2">Owner Premium</div>
                             <div className="flex items-baseline gap-2 mb-2">
-                                <span className="text-5xl font-bold text-white">$49</span>
+                                <span className="text-5xl font-bold text-white">$19.99</span>
                                 <span className="text-gray-500">/month</span>
                             </div>
                             <p className="text-gray-400 mb-8">Full AI power. Unlimited locations.</p>

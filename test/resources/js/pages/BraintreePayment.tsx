@@ -13,7 +13,11 @@ import {
     Crown,
     CheckCircle2,
     Lock,
-    PartyPopper
+    PartyPopper,
+    Calendar,
+    CalendarDays,
+    ArrowRight,
+    FlaskConical
 } from 'lucide-react';
 
 import AppLayout from '@/layouts/app-layout';
@@ -57,39 +61,53 @@ const FEATURES = [
 ];
 
 export default function UpgradeToPremium() {
-    // Récupération de l'utilisateur pour vérifier le statut
-    const { auth } = usePage().props as any;
-    const isPremium = auth.user.mode_compte === 'PREMIUM';
+    // 🔥 On récupère isPremiumActive envoyé par le contrôleur
+    const { isPremiumActive } = usePage().props as any;
+    
+    // On utilise cette valeur pour l'affichage
+    const isPremium = isPremiumActive;
 
     const dropinContainer = useRef<HTMLDivElement>(null);
+    const paymentSectionRef = useRef<HTMLDivElement>(null);
     const instanceRef = useRef<any>(null);
     
     const [loadingToken, setLoadingToken] = useState(true);
     const [processingPayment, setProcessingPayment] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
+    
+    const [selectedPlan, setSelectedPlan] = useState<'minute' | 'monthly' | 'yearly' | null>(null);
+
+    const prices = {
+        minute: { amount: '1.00', label: '/min', name: 'Test Plan (1 Min)' },
+        monthly: { amount: '19.99', label: '/month', name: 'Monthly Plan' },
+        yearly: { amount: '199.99', label: '/year', name: 'Yearly Plan' }
+    };
 
     useEffect(() => {
-        // Si déjà premium, on ne charge pas Braintree
-        if (isPremium) return;
+        if (isPremium || !selectedPlan) return;
 
         let isMounted = true;
 
         const initializeBraintree = async () => {
+            setLoadingToken(true);
             try {
                 const { data } = await axios.get('/braintree/token');
                 
                 if (!isMounted || !dropinContainer.current) return;
 
+                if (instanceRef.current) {
+                    try {
+                        await instanceRef.current.teardown();
+                    } catch (e) {
+                        console.warn("Braintree teardown error", e);
+                    }
+                }
+
                 instanceRef.current = await dropin.create({
                     authorization: data.token,
                     container: dropinContainer.current,
                     paypal: false,
-                    paypalCredit: false,
-                    venmo: false,
-                    applePay: false,
-                    googlePay: false,
                     card: {
-                        // Suppression de la demande du nom du titulaire
                         overrides: {
                             styles: {
                                 input: {
@@ -103,7 +121,13 @@ export default function UpgradeToPremium() {
                 });
 
                 setIsInitialized(true);
+                
+                setTimeout(() => {
+                    paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+
             } catch (error) {
+                console.error(error);
                 toast.error("Failed to load payment system. Please refresh.");
             } finally {
                 if (isMounted) setLoadingToken(false);
@@ -114,15 +138,11 @@ export default function UpgradeToPremium() {
 
         return () => {
             isMounted = false;
-            if (instanceRef.current) {
-                instanceRef.current.teardown().catch(() => {});
-                instanceRef.current = null;
-            }
         };
-    }, [isPremium]);
+    }, [isPremium, selectedPlan]);
 
     const handlePayment = async () => {
-        if (!instanceRef.current) return;
+        if (!instanceRef.current || !selectedPlan) return;
 
         setProcessingPayment(true);
         const toastId = toast.loading('Processing secure payment...');
@@ -132,20 +152,20 @@ export default function UpgradeToPremium() {
 
             const response = await axios.post('/braintree/checkout', {
                 nonce,
-                amount: '19.99',
-                plan: 'premium_monthly'
+                plan: selectedPlan
             });
 
             if (response.data.success) {
                 toast.success('Upgrade successful! Welcome to Premium.', { id: toastId });
-                window.location.href = '/dashboard'; 
+                // Rechargement complet pour mettre à jour les props Inertia
+                window.location.href = '/parkings'; 
             } else {
                 throw new Error(response.data.message || 'Payment rejected');
             }
 
         } catch (error: any) {
             if (error.message !== 'No payment method is available.') {
-                toast.error(error.response?.data?.message || 'Payment failed. Please check your card details.', { id: toastId });
+                toast.error(error.response?.data?.message || 'Payment failed.', { id: toastId });
             } else {
                 toast.dismiss(toastId);
             }
@@ -158,163 +178,117 @@ export default function UpgradeToPremium() {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Upgrade to Premium" />
 
-            <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 py-12 px-4 sm:px-6 lg:px-8">
-                <div className="max-w-7xl mx-auto">
+            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-12 px-4 sm:px-6 lg:px-8">
+                <div className="max-w-6xl mx-auto">
                     
-                    {/* Header Section */}
-                    <div className="text-center max-w-3xl mx-auto mb-16">
-                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-sm font-medium mb-6 animate-fade-in-up ${isPremium ? 'bg-emerald-100/50 text-emerald-700 border-emerald-200/60' : 'bg-amber-100/50 text-amber-700 border-amber-200/60'}`}>
-                            <Crown className={`w-4 h-4 ${isPremium ? 'fill-emerald-500 text-emerald-600' : 'fill-amber-500 text-amber-600'}`} />
-                            <span>{isPremium ? 'Active Premium Member' : 'Premium Owner Plan'}</span>
+                    <div className="text-center max-w-3xl mx-auto mb-12">
+                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-sm font-medium mb-6 animate-fade-in-up ${isPremium ? 'bg-emerald-100/50 text-emerald-700 border-emerald-200/60' : 'bg-blue-100/50 text-blue-700 border-blue-200/60'}`}>
+                            <Crown className="w-4 h-4 fill-current" />
+                            <span>{isPremium ? 'Active Premium Member' : 'Choose Your Plan'}</span>
                         </div>
-                        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-6">
-                            Scale your parking business <br className="hidden sm:block" />
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-violet-600">without limits.</span>
+                        <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-4">
+                            Simple Pricing, No Hidden Fees
                         </h1>
-                        <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-                            Upgrade now to unlock advanced AI features, unlimited parking slots, and start accepting online payments instantly.
+                        <p className="text-lg text-slate-600 dark:text-slate-400">
+                            Unlock advanced features to grow your parking business.
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
-                        
-                        {/* Left Column: Value Proposition */}
-                        <div className="lg:col-span-7 space-y-8">
-                            <div className="grid sm:grid-cols-2 gap-6">
-                                {FEATURES.map((feature, idx) => (
-                                    <div key={idx} className="group p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 shadow-sm hover:shadow-md transition-all duration-300">
-                                        <div className="h-12 w-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center mb-4 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 transition-colors">
-                                            <feature.icon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                                        </div>
-                                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                                            {feature.title}
-                                        </h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            {feature.desc}
-                                        </p>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="p-6 rounded-2xl bg-slate-900 dark:bg-slate-800 text-white shadow-xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl"></div>
-                                <div className="relative z-10">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="p-2 bg-green-500/20 rounded-lg">
-                                            <ShieldCheck className="h-6 w-6 text-green-400" />
-                                        </div>
-                                        <h3 className="font-semibold text-lg">Bank-Grade Security</h3>
-                                    </div>
-                                    <p className="text-slate-300 text-sm mb-6 leading-relaxed">
-                                        We use Braintree (a PayPal service) to process payments securely. 
-                                        Your financial data never touches our servers and is encrypted using 
-                                        industry-standard 256-bit SSL technology.
-                                    </p>
-                                    <div className="flex items-center gap-4 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
-                                        {/* Logos simulés */}
-                                        <div className="h-6 w-10 bg-white/20 rounded" title="Visa"></div>
-                                        <div className="h-6 w-10 bg-white/20 rounded" title="Mastercard"></div>
-                                        <div className="h-6 w-10 bg-white/20 rounded" title="Amex"></div>
-                                    </div>
+                    {isPremium ? (
+                        <Card className="max-w-md mx-auto border-2 border-emerald-500/20 bg-white dark:bg-slate-900 text-center p-8 shadow-xl">
+                            <div className="flex justify-center mb-6">
+                                <div className="h-20 w-20 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center">
+                                    <PartyPopper className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Right Column: Payment Form OR Success State */}
-                        <div className="lg:col-span-5 sticky top-8">
-                            {isPremium ? (
-                                // 🟢 VIEW IF ALREADY PREMIUM
-                                <Card className="border-2 border-emerald-500/20 shadow-2xl shadow-emerald-900/5 overflow-hidden ring-1 ring-emerald-900/5">
-                                    <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-8 text-white relative overflow-hidden text-center">
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                                        <div className="relative z-10 flex flex-col items-center">
-                                            <div className="h-16 w-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center mb-4">
-                                                <PartyPopper className="h-8 w-8 text-white" />
-                                            </div>
-                                            <h2 className="text-2xl font-bold">You are Premium!</h2>
-                                            <p className="text-emerald-100 mt-2">Your subscription is active.</p>
+                            <h2 className="text-2xl font-bold mb-2">You are Premium!</h2>
+                            <p className="text-slate-600 dark:text-slate-400 mb-8">
+                                Thank you for your subscription. You have access to all features.
+                            </p>
+                            <Button asChild className="w-full h-12 text-base bg-emerald-600 hover:bg-emerald-700">
+                                <Link href="/dashboard">Go to Dashboard</Link>
+                            </Button>
+                        </Card>
+                    ) : (
+                        <>
+                            <div className="grid md:grid-cols-3 gap-6 mb-16 max-w-5xl mx-auto">
+                                
+                                {/* TEST PLAN */}
+                                <Card 
+                                    className={`relative overflow-hidden transition-all duration-300 cursor-pointer hover:shadow-xl hover:-translate-y-1 ${selectedPlan === 'minute' ? 'ring-2 ring-amber-500 shadow-lg scale-[1.02]' : 'border-slate-200 hover:border-amber-300'}`}
+                                    onClick={() => setSelectedPlan('minute')}
+                                >
+                                    <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">DEMO</div>
+                                    <div className="p-6">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div><h3 className="text-lg font-semibold">1 Minute</h3><p className="text-xs text-slate-500">Quick test</p></div>
+                                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${selectedPlan === 'minute' ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-600'}`}><FlaskConical className="h-5 w-5" /></div>
                                         </div>
+                                        <div className="flex items-baseline gap-1 mb-6"><span className="text-3xl font-bold">$1.00</span><span className="text-slate-500 font-medium text-sm">/min</span></div>
+                                        <Button className={`w-full h-9 text-sm pointer-events-none ${selectedPlan === 'minute' ? 'bg-amber-600' : 'bg-slate-100 text-slate-900'}`}>{selectedPlan === 'minute' ? 'Selected' : 'Select Test'}</Button>
                                     </div>
-                                    <CardContent className="p-8 bg-white dark:bg-slate-900 text-center">
-                                        <p className="text-slate-600 dark:text-slate-400 mb-6">
-                                            Thank you for being a premium member. You have access to all advanced features including AI detection and unlimited parking management.
-                                        </p>
-                                        <Button asChild className="w-full h-12 text-base bg-emerald-600 hover:bg-emerald-700">
-                                            <Link href="/dashboard">
-                                                Go to Dashboard
-                                            </Link>
-                                        </Button>
-                                    </CardContent>
-                                    <CardFooter className="bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 p-4 justify-center">
-                                        <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                                            <ShieldCheck className="h-3 w-3" />
-                                            Secure & Active Subscription
-                                        </p>
-                                    </CardFooter>
                                 </Card>
-                            ) : (
-                                // 🔵 VIEW IF BASIC (PAYMENT FORM)
-                                <Card className="border-0 shadow-2xl shadow-blue-900/10 overflow-hidden ring-1 ring-slate-900/5">
-                                    <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-white relative overflow-hidden">
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                                        
-                                        <div className="relative z-10">
-                                            <p className="text-blue-100 text-sm font-medium uppercase tracking-wider mb-1">Monthly Plan</p>
-                                            <div className="flex items-baseline gap-1">
-                                                <span className="text-5xl font-bold">$19.99</span>
-                                                <span className="text-blue-100 font-medium">/month</span>
-                                            </div>
-                                            <div className="mt-4 flex items-center gap-2 text-sm text-blue-50">
-                                                <CheckCircle2 className="w-4 h-4" />
-                                                <span>Cancel anytime. No hidden fees.</span>
-                                            </div>
+
+                                {/* MONTHLY PLAN */}
+                                <Card 
+                                    className={`relative overflow-hidden transition-all duration-300 cursor-pointer hover:shadow-xl hover:-translate-y-1 ${selectedPlan === 'monthly' ? 'ring-2 ring-blue-600 shadow-lg scale-[1.02]' : 'border-slate-200 hover:border-blue-300'}`}
+                                    onClick={() => setSelectedPlan('monthly')}
+                                >
+                                    <div className="p-6">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div><h3 className="text-lg font-semibold">Monthly</h3><p className="text-xs text-slate-500">Flexible</p></div>
+                                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${selectedPlan === 'monthly' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'}`}><Calendar className="h-5 w-5" /></div>
                                         </div>
+                                        <div className="flex items-baseline gap-1 mb-6"><span className="text-3xl font-bold">$19.99</span><span className="text-slate-500 font-medium text-sm">/mo</span></div>
+                                        <Button className={`w-full h-9 text-sm pointer-events-none ${selectedPlan === 'monthly' ? 'bg-blue-600' : 'bg-slate-100 text-slate-900'}`}>{selectedPlan === 'monthly' ? 'Selected' : 'Select Monthly'}</Button>
                                     </div>
-
-                                    <CardContent className="p-6 bg-white dark:bg-slate-900">
-                                        {loadingToken && (
-                                            <div className="flex flex-col items-center justify-center py-16 space-y-4">
-                                                <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
-                                                <p className="text-sm text-slate-500 font-medium">Securing connection...</p>
-                                            </div>
-                                        )}
-
-                                        <div 
-                                            ref={dropinContainer} 
-                                            className={loadingToken ? 'hidden' : 'min-h-[280px]'}
-                                        ></div>
-                                    </CardContent>
-
-                                    <Separator className="bg-slate-100 dark:bg-slate-800" />
-
-                                    <CardFooter className="p-6 bg-slate-50 dark:bg-slate-950 flex flex-col gap-4">
-                                        <Button 
-                                            className="w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]" 
-                                            onClick={handlePayment}
-                                            disabled={!isInitialized || processingPayment}
-                                        >
-                                            {processingPayment ? (
-                                                <div className="flex items-center gap-2">
-                                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                                    <span>Processing Securely...</span>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-2">
-                                                    <Lock className="h-4 w-4" />
-                                                    <span>Pay & Upgrade Now</span>
-                                                </div>
-                                            )}
-                                        </Button>
-                                        
-                                        <p className="text-xs text-center text-slate-400">
-                                            By confirming, you agree to our Terms of Service. 
-                                            Transaction is secure and encrypted.
-                                        </p>
-                                    </CardFooter>
                                 </Card>
+
+                                {/* YEARLY PLAN */}
+                                <Card 
+                                    className={`relative overflow-hidden transition-all duration-300 cursor-pointer hover:shadow-xl hover:-translate-y-1 ${selectedPlan === 'yearly' ? 'ring-2 ring-indigo-600 shadow-lg scale-[1.02]' : 'border-slate-200 hover:border-indigo-300'}`}
+                                    onClick={() => setSelectedPlan('yearly')}
+                                >
+                                    <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">-17%</div>
+                                    <div className="p-6">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div><h3 className="text-lg font-semibold">Yearly</h3><p className="text-xs text-slate-500">Best value</p></div>
+                                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${selectedPlan === 'yearly' ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-600'}`}><CalendarDays className="h-5 w-5" /></div>
+                                        </div>
+                                        <div className="flex items-baseline gap-1 mb-6"><span className="text-3xl font-bold">$199.99</span><span className="text-slate-500 font-medium text-sm">/yr</span></div>
+                                        <Button className={`w-full h-9 text-sm pointer-events-none ${selectedPlan === 'yearly' ? 'bg-indigo-600' : 'bg-slate-100 text-slate-900'}`}>{selectedPlan === 'yearly' ? 'Selected' : 'Select Yearly'}</Button>
+                                    </div>
+                                </Card>
+                            </div>
+
+                            {selectedPlan && (
+                                <div key={selectedPlan} ref={paymentSectionRef} className="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-8 duration-700 pb-16">
+                                    <Card className="border-0 shadow-2xl overflow-hidden ring-1 ring-slate-900/5">
+                                        <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white flex items-center justify-between">
+                                            <div>
+                                                <p className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">Checkout</p>
+                                                <h3 className="text-xl font-bold flex items-center gap-2">
+                                                    {prices[selectedPlan].name}
+                                                    <Badge className="bg-white/10 text-white border-0 hover:bg-white/20 ml-2 text-base px-2">${prices[selectedPlan].amount}</Badge>
+                                                </h3>
+                                            </div>
+                                            <Lock className="h-6 w-6 text-slate-400" />
+                                        </div>
+                                        <CardContent className="p-6 bg-white dark:bg-slate-900 min-h-[250px]">
+                                            {loadingToken && <div className="flex flex-col items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>}
+                                            <div ref={dropinContainer} className={loadingToken ? 'hidden' : ''}></div>
+                                        </CardContent>
+                                        <Separator />
+                                        <CardFooter className="p-6 bg-slate-50 dark:bg-slate-950 flex flex-col gap-4">
+                                            <Button className="w-full h-14 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg" onClick={handlePayment} disabled={!isInitialized || processingPayment}>
+                                                {processingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ${prices[selectedPlan].amount} & Upgrade <ArrowRight className="ml-2 h-4 w-4" /></>}
+                                            </Button>
+                                        </CardFooter>
+                                    </Card>
+                                </div>
                             )}
-                        </div>
-                    </div>
+                        </>
+                    )}
                 </div>
             </div>
         </AppLayout>

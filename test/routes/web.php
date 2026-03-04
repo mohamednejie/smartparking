@@ -60,10 +60,10 @@ use App\Http\Controllers\BraintreeController;
 
 Route::middleware(['auth'])->group(function () {
 
-    Route::get('/payment', function () {
-        return Inertia::render('BraintreePayment');
-    });
+    // ✅ Utilise le contrôleur pour avoir les props (isPremiumActive)
+    Route::get('/payment', [BraintreeController::class, 'show'])->name('payment.show');
 
+    // API Braintree
     Route::get('/braintree/token', [BraintreeController::class, 'token']);
     Route::post('/braintree/checkout', [BraintreeController::class, 'checkout']);
 

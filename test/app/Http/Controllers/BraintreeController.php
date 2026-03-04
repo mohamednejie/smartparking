@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+use Inertia\Inertia;
 
 use Illuminate\Http\Request;
 use App\Services\BraintreeService;
@@ -37,52 +38,79 @@ class BraintreeController extends Controller
     /**
      * Traiter le paiement
      */
-    public function checkout(Request $request)
-    {
-        // Validation du nonce
-        $request->validate([
-            'nonce' => 'required|string'
+    // BraintreeController.php
+
+public function checkout(Request $request)
+{
+    $request->validate([
+        'nonce' => 'required|string',
+        // Ajoute 'minute' aux valeurs autorisées
+        'plan'  => 'required|in:minute,monthly,yearly', 
+    ]);
+
+    $user = $request->user();
+    $plan = $request->plan;
+
+    // Définir montant et durée
+    if ($plan === 'minute') {
+        $amount = "1.00"; // 1 TND pour tester
+        $duration = now()->addMinute(); 
+    } elseif ($plan === 'monthly') {
+        $amount = "19.99";
+        $duration = now()->addMonth();
+    } else {
+        $amount = "199.99";
+        $duration = now()->addYear();
+    }
+
+    try {
+        $gateway = BraintreeService::gateway();
+
+        $result = $gateway->transaction()->sale([
+            'amount' => $amount,
+            'paymentMethodNonce' => $request->nonce,
+            'options' => ['submitForSettlement' => true]
         ]);
 
-        try {
-            $gateway = BraintreeService::gateway();
+        if ($result->success) {
+            $user->mode_compte = 'PREMIUM';
+            $user->subscription_plan = $plan;
 
-            $result = $gateway->transaction()->sale([
-                'amount' => "19.99", // 💰 change le montant ici
-                'paymentMethodNonce' => $request->nonce,
-                'options' => [
-                    'submitForSettlement' => true
-                ]
-            ]);
-
-            if ($result->success) {
-                // Mettre à jour le type de compte de l'utilisateur
-                $user = $request->user();
-                if ($user) {
-                    $user->mode_compte = 'PREMIUM';
-                    $user->save();
-                }
-
-                return response()->json([
-                    'success' => true,
-                    'transaction_id' => $result->transaction->id
-                ]);
+            // Logique d'ajout de temps
+            if ($user->subscription_ends_at && $user->subscription_ends_at > now()) {
+                if ($plan === 'minute') $user->subscription_ends_at = $user->subscription_ends_at->addMinute();
+                elseif ($plan === 'monthly') $user->subscription_ends_at = $user->subscription_ends_at->addMonth();
+                else $user->subscription_ends_at = $user->subscription_ends_at->addYear();
+            } else {
+                $user->subscription_ends_at = $duration;
             }
+            
+            $user->save();
 
-            return response()->json([
-                'success' => false,
-                'message' => $result->message
-            ], 400);
-
-        } catch (\Exception $e) {
-            \Log::error('Braintree checkout error', [
-                'message' => $e->getMessage()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur serveur lors du paiement.'
-            ], 500);
+            return response()->json(['success' => true]);
         }
+
+        return response()->json(['success' => false, 'message' => $result->message], 400);
+
+    } catch (\Exception $e) {
+        \Log::error('Payment error', ['message' => $e->getMessage()]);
+        return response()->json(['success' => false], 500);
     }
+}
+
+public function show(Request $request)
+{
+    $user = $request->user();
+
+    $isPremiumActive = $user->mode_compte === 'PREMIUM' 
+        && $user->subscription_ends_at 
+        && $user->subscription_ends_at->isFuture();
+
+    // 👇 Assure-toi que ce chemin correspond à ton fichier React
+    // Si le fichier est resources/js/pages/BraintreePayment.tsx -> 'BraintreePayment'
+    // Si c'est resources/js/pages/Settings/UpgradeToPremium.tsx -> 'Settings/UpgradeToPremium'
+    return Inertia::render('BraintreePayment', [ 
+        'isPremiumActive' => $isPremiumActive,
+    ]);
+}
 }

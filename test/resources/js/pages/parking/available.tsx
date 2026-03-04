@@ -838,6 +838,9 @@ function ParkingCard({
             : 0;
 
     const isOpen = parking.is_24h || parking.is_open_now;
+    const isActive = parking.status === 'active';
+    // Logic to check if parking is bookable: Active AND Open AND Spots Available
+    const isBookable = isActive && isOpen && parking.available_spots > 0;
 
     if (viewMode === 'list') {
         // ----- LIST VIEW (inchangée) -----
@@ -1079,22 +1082,24 @@ function ParkingCard({
                     </span>
                 </div>
 
-                {/* BOUTON BOOKING SUR L'IMAGE (animation pro) */}
-                <div className="absolute inset-0 flex items-end justify-center pb-4 opacity-0 translate-y-4 group-hover/image:opacity-100 group-hover/image:translate-y-0 transition-all duration-300 ease-out pointer-events-none z-30">
-                    <Button
-                        size="sm"
-                        className="bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-black/40 rounded-full px-4 py-2 flex items-center gap-2 pointer-events-auto"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            router.visit(
-                                `/parkings/${parking.id}/reservations/create`
-                            );
-                        }}
-                    >
-                        <CalendarCheck className="h-4 w-4" />
-                        Booking
-                    </Button>
-                </div>
+                {/* BOUTON BOOKING SUR L'IMAGE (animation pro) - SEULEMENT SI RÉSERVABLE */}
+                {isBookable && (
+                    <div className="absolute inset-0 flex items-end justify-center pb-4 opacity-0 translate-y-4 group-hover/image:opacity-100 group-hover/image:translate-y-0 transition-all duration-300 ease-out pointer-events-none z-30">
+                        <Button
+                            size="sm"
+                            className="bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-black/40 rounded-full px-4 py-2 flex items-center gap-2 pointer-events-auto"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                router.visit(
+                                    `/parkings/${parking.id}/reservations/create`
+                                );
+                            }}
+                        >
+                            <CalendarCheck className="h-4 w-4" />
+                            Booking
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {/* Content */}

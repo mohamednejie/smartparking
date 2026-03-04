@@ -23,20 +23,38 @@ class ParkingController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
-        $parkings = $user->parkings()
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn($p) => [
-                ...$p->toArray(),
-                'photo_url'          => $p->photo_url,
-                'annotated_file_url' => $p->annotated_file_url,
-            ]);
+        // Vérifier si l'utilisateur est Premium ET valide
+        $isPremiumValid = $user->isPremium(); 
+
+        // Compter le total réel de ses parkings
+        $totalParkings = $user->parkings()->count();
+
+        // Préparer la requête
+        $query = $user->parkings()->orderByDesc('created_at');
+
+        // SI PAS PREMIUM : on limite à 3
+        if (!$isPremiumValid) {
+            $query->limit(3);
+        }
+
+        // Récupérer les parkings (limités ou non)
+        $parkings = $query->get()->map(fn($p) => [
+            ...$p->toArray(),
+            'photo_url'          => $p->photo_url,
+            'annotated_file_url' => $p->annotated_file_url,
+        ]);
+
+        // Est-ce qu'on doit afficher le message "Upgrade" ?
+        // Oui si pas premium ET qu'il a plus de 3 parkings en base
+        $showUpgradeMessage = !$isPremiumValid && $totalParkings > 3;
 
         return Inertia::render('parking/index', [
-            'parkings'    => $parkings,
-            'canAdd'      => $user->canAddParking(),
-            'currentPlan' => $user->mode_compte,
-            'isPremium'   => $user->isPremium(),
+            'parkings'           => $parkings,
+            'canAdd'             => $user->canAddParking(),
+            'currentPlan'        => $user->mode_compte,
+            'isPremium'          => $isPremiumValid,
+            'showUpgradeMessage' => $showUpgradeMessage,
+            'hiddenCount'        => $showUpgradeMessage ? ($totalParkings - 3) : 0
         ]);
     }
 
@@ -332,16 +350,35 @@ class ParkingController extends Controller
     
 
 
-    public function available(Request $request): Response
+   public function available(Request $request): Response
 {
+    // 1. Base Query : Parkings actifs + Info Owner
     $query = Parking::where('status', 'active')
         ->with('owner:id,name,company_name');
+
+    // 2. 🔥 FILTRE VISIBILITÉ (Le "Block" des parkings hors quota)
+    // Seuls les parkings autorisés par le plan de l'owner sont affichés
+    $query->where(function ($q) {
+        $q->whereHas('owner', function ($userQuery) {
+            // Cas A : Owner est PREMIUM et son abonnement est valide (dans le futur)
+            $userQuery->where('mode_compte', 'PREMIUM')
+                      ->where('subscription_ends_at', '>', now());
+        })
+        ->orWhereIn('id', function ($sub) {
+            // Cas B : Owner BASIC (ou expiré) -> On ne garde que ses 3 parkings les plus récents
+            $sub->select('id')
+                ->from('parkings as p')
+                ->whereRaw('p.user_id = parkings.user_id') // Lien avec la requête parente
+                ->orderByDesc('created_at')
+                ->limit(3);
+        });
+    });
 
     // ══════════════════════════════════════════════════════════════
     // 🔎 FILTRES DE RECHERCHE
     // ══════════════════════════════════════════════════════════════
 
-    // Recherche par nom
+    // Recherche par nom/description
     if ($request->filled('name')) {
         $searchTerm = $request->name;
         $query->where(function ($q) use ($searchTerm) {
@@ -359,12 +396,12 @@ class ParkingController extends Controller
         });
     }
 
-    // Recherche par adresse
+    // Recherche par adresse exacte
     if ($request->filled('address')) {
         $query->where('address_label', 'ILIKE', '%' . $request->address . '%');
     }
 
-    // Recherche générale
+    // Recherche globale (q)
     if ($request->filled('q')) {
         $searchTerm = $request->q;
         $query->where(function ($q) use ($searchTerm) {
@@ -417,47 +454,58 @@ class ParkingController extends Controller
     $hasGeoSearch = $request->filled('latitude') && $request->filled('longitude');
 
     if ($hasGeoSearch) {
-    $lat = (float) $request->latitude;
-    $lng = (float) $request->longitude;
-    $radius = (float) ($request->radius ?? 10);
+        $lat = (float) $request->latitude;
+        $lng = (float) $request->longitude;
+        $radius = (float) ($request->radius ?? 10);
 
-    $haversine = "(6371 * acos(
-        LEAST(1.0, GREATEST(-1.0,
-            cos(radians(?)) *
-            cos(radians(latitude)) *
-            cos(radians(longitude) - radians(?)) +
-            sin(radians(?)) *
-            sin(radians(latitude))
-        ))
-    ))";
+        // Formule Haversine SQL
+        $haversine = "(6371 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+                cos(radians(?)) *
+                cos(radians(latitude)) *
+                cos(radians(longitude) - radians(?)) +
+                sin(radians(?)) *
+                sin(radians(latitude))
+            ))
+        ))";
 
-    $query->selectRaw("parkings.*, $haversine as distance", [$lat, $lng, $lat])
-        ->whereNotNull('latitude')
-        ->whereNotNull('longitude')
-        ->whereRaw("$haversine <= ?", [$lat, $lng, $lat, $radius]); // <- Utiliser whereRaw au lieu de havingRaw
- }
+        $query->selectRaw("parkings.*, $haversine as distance", [$lat, $lng, $lat])
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->whereRaw("$haversine <= ?", [$lat, $lng, $lat, $radius]);
+    }
+
     // ══════════════════════════════════════════════════════════════
     // 🔄 TRI
     // ══════════════════════════════════════════════════════════════
 
     $sortBy = $request->get('sort', $hasGeoSearch ? 'distance' : 'created_at');
-    $sortOrder = $request->get('order', $sortBy === 'price_per_hour' ? 'asc' : ($sortBy === 'distance' ? 'asc' : 'desc'));
+    $sortOrder = $request->get('order', ($sortBy === 'price_per_hour' || $sortBy === 'distance') ? 'asc' : 'desc');
 
     $query = $this->applySorting($query, $sortBy, $sortOrder, $hasGeoSearch);
 
     // ══════════════════════════════════════════════════════════════
-    // 📄 PAGINATION
+    // 📄 PAGINATION & DATA
     // ══════════════════════════════════════════════════════════════
 
     $parkings = $query->paginate(12)->through(fn($p) => $this->formatParking($p, $hasGeoSearch));
 
-    // Liste des villes
-    $cities = $this->getAvailableCities();
+    // Récupération des données pour les filtres (villes, prix min/max)
+    // Note: Pour priceRange, on applique aussi le filtre de visibilité pour être cohérent
+    $priceRangeQuery = Parking::where('status', 'active')->where(function ($q) {
+        $q->whereHas('owner', function ($userQuery) {
+            $userQuery->where('mode_compte', 'PREMIUM')->where('subscription_ends_at', '>', now());
+        })->orWhereIn('id', function ($sub) {
+            $sub->select('id')->from('parkings as p')
+                ->whereRaw('p.user_id = parkings.user_id')
+                ->orderByDesc('created_at')->limit(3);
+        });
+    });
 
-    // Plage de prix
-    $priceRange = Parking::where('status', 'active')
-        ->selectRaw('MIN(price_per_hour) as min_price, MAX(price_per_hour) as max_price')
-        ->first();
+    $priceRange = $priceRangeQuery->selectRaw('MIN(price_per_hour) as min_price, MAX(price_per_hour) as max_price')->first();
+    
+    // Récupération intelligente des villes disponibles
+    $cities = $this->getAvailableCities(); 
 
     return Inertia::render('parking/available', [
         'parkings' => $parkings,

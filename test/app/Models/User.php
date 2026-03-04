@@ -37,6 +37,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'bio',
         'company_name',
         'website',
+        'subscription_ends_at',     // 'monthly' ou 'yearly'
+        'subscription_plan',
     ];
 
     /**
@@ -62,6 +64,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'subscription_ends_at' => 'datetime', // Important pour les comparaisons de dates
         ];
     }
     public function parkings()
@@ -69,15 +72,26 @@ class User extends Authenticatable implements MustVerifyEmail
     return $this->hasMany(Parking::class);
 }
 
-public function isPremium(): bool
-{
-    return $this->mode_compte === 'PREMIUM';
-}
+    public function isPremium(): bool
+    {
+        // Si le mode est PREMIUM
+        if ($this->mode_compte !== 'PREMIUM') {
+            return false;
+        }
 
-public function isBasic(): bool
-{
-    return $this->mode_compte === 'BASIC';
-}
+        // Si une date de fin est définie, on vérifie qu'elle est dans le futur
+        if ($this->subscription_ends_at && $this->subscription_ends_at->isPast()) {
+            return false; // Abonnement expiré
+        }
+
+        return true;
+    }
+
+    public function isBasic(): bool
+    {
+        // Si ce n'est pas premium (ou si expiré), c'est considéré comme basic
+        return !$this->isPremium();
+    }
 
 public function canAddParking(): bool
 {

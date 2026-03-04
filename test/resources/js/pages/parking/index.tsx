@@ -1,12 +1,10 @@
-// resources/js/pages/parking/index.tsx
-
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
     Plus, MapPin, Car, Eye, Edit, Trash2, Crown,
     CheckCircle, AlertTriangle, XCircle,
-    Power, PowerOff
+    Power, PowerOff, Lock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
@@ -36,9 +34,18 @@ type Props = {
     canAdd: boolean;
     currentPlan: string;
     isPremium: boolean;
+    showUpgradeMessage?: boolean; // <-- Ajouté
+    hiddenCount?: number;         // <-- Ajouté
 };
 
-export default function ParkingIndex({ parkings, canAdd, currentPlan, isPremium }: Props) {
+export default function ParkingIndex({ 
+    parkings, 
+    canAdd, 
+    currentPlan, 
+    isPremium, 
+    showUpgradeMessage, 
+    hiddenCount 
+}: Props) {
     const { flash } = usePage().props as any;
     const [deleteTarget, setDeleteTarget] = useState<Parking | null>(null);
     const [toggleTarget, setToggleTarget] = useState<Parking | null>(null);
@@ -94,15 +101,16 @@ export default function ParkingIndex({ parkings, canAdd, currentPlan, isPremium 
                             isPremium ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'
                         }`}>
                             {isPremium && <Crown className="inline h-3 w-3 mr-1" />}
-                            {currentPlan}
+                            {isPremium ? 'Premium' : 'Basic'}
                         </span>
+                        
                         {canAdd ? (
                             <Button onClick={() => router.visit('/parkings/create')}>
                                 <Plus className="mr-2 h-4 w-4" /> Add Parking
                             </Button>
                         ) : (
-                            <Button variant="outline" onClick={() => router.visit('/payment/upgrade')}>
-                                <Crown className="mr-2 h-4 w-4 text-yellow-500" /> Upgrade
+                            <Button variant="outline" onClick={() => router.visit('/payment')} className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100">
+                                <Crown className="mr-2 h-4 w-4 text-amber-500" /> Upgrade Limit
                             </Button>
                         )}
                     </div>
@@ -131,7 +139,7 @@ export default function ParkingIndex({ parkings, canAdd, currentPlan, isPremium 
                 )}
 
                 {/* ═══ Vide ═══ */}
-                {parkings.length === 0 && (
+                {parkings.length === 0 && !showUpgradeMessage && (
                     <div className="text-center py-20 border rounded-lg bg-muted/30">
                         <Car className="mx-auto h-16 w-16 text-muted-foreground" />
                         <h3 className="mt-4 text-lg font-semibold">No parkings yet</h3>
@@ -145,7 +153,7 @@ export default function ParkingIndex({ parkings, canAdd, currentPlan, isPremium 
                 )}
 
                 {/* ═══ Grille ═══ */}
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {parkings.map((parking) => {
                         const lat = Number(parking.latitude);
                         const lng = Number(parking.longitude);
@@ -153,20 +161,20 @@ export default function ParkingIndex({ parkings, canAdd, currentPlan, isPremium 
                         return (
                             <div
                                 key={parking.id}
-                                className={`rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-shadow ${
-                                    parking.status === 'inactive' ? 'opacity-60' : ''
+                                className={`flex flex-col rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-card ${
+                                    parking.status === 'inactive' ? 'opacity-75 grayscale-[0.2]' : ''
                                 }`}
                             >
                                 {/* Photo */}
-                                <div className="h-48 bg-muted relative">
+                                <div className="h-48 bg-muted relative shrink-0">
                                     {isPremium && parking.annotated_file_url ? (
                                         <>
                                             <img
                                                 src={parking.annotated_file_url}
                                                 alt={parking.name}
-                                                className="h-full w-full object-cover"
+                                                className="h-full w-full object-cover transition-transform hover:scale-105 duration-500"
                                             />
-                                            <span className="absolute top-2 left-2 rounded-full bg-yellow-500 px-2 py-0.5 text-xs font-bold text-white">
+                                            <span className="absolute top-2 left-2 rounded-full bg-yellow-500 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
                                                 AI Annotated
                                             </span>
                                         </>
@@ -174,128 +182,143 @@ export default function ParkingIndex({ parkings, canAdd, currentPlan, isPremium 
                                         <img
                                             src={parking.photo_url}
                                             alt={parking.name}
-                                            className="h-full w-full object-cover"
+                                            className="h-full w-full object-cover transition-transform hover:scale-105 duration-500"
                                         />
                                     ) : (
                                         <div className="flex h-full items-center justify-center">
-                                            <Car className="h-12 w-12 text-muted-foreground" />
+                                            <Car className="h-12 w-12 text-muted-foreground/50" />
                                         </div>
                                     )}
 
                                     {/* Status badge */}
-                                    <div className="absolute top-2 right-2">
+                                    <div className="absolute top-2 right-2 shadow-sm">
                                         {statusBadge(parking.status)}
                                     </div>
                                 </div>
 
                                 {/* Infos */}
-                                <div className="p-5">
-                                    <h3 className="font-semibold text-lg">{parking.name}</h3>
+                                <div className="p-5 flex flex-col flex-1">
+                                    <div className="mb-4">
+                                        <h3 className="font-semibold text-lg line-clamp-1" title={parking.name}>
+                                            {parking.name}
+                                        </h3>
 
-                                    {parking.address_label && (
-                                        <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                                            <MapPin className="h-3 w-3 shrink-0" />
-                                            {parking.address_label.length > 60
-                                                ? parking.address_label.substring(0, 60) + '...'
-                                                : parking.address_label}
+                                        <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                                            <MapPin className="h-3.5 w-3.5 shrink-0" />
+                                            <span className="truncate">
+                                                {parking.address_label || 'No address provided'}
+                                            </span>
                                         </p>
-                                    )}
+                                    </div>
 
                                     {/* Stats */}
-                                    <div className="mt-4 grid grid-cols-3 gap-3">
-                                        <div className="rounded-lg border p-3 text-center">
-                                            <p className="text-xl font-bold text-blue-600">
+                                    <div className="grid grid-cols-3 gap-2 mb-4">
+                                        <div className="rounded-lg border bg-muted/20 p-2 text-center">
+                                            <p className="text-lg font-bold text-blue-600">
                                                 {parking.detected_cars}
                                             </p>
-                                            <p className="text-xs text-muted-foreground">Cars</p>
+                                            <p className="text-[10px] text-muted-foreground uppercase font-medium">Cars</p>
                                         </div>
-                                        <div className="rounded-lg border p-3 text-center">
-                                            <p className={`text-xl font-bold ${
+                                        <div className="rounded-lg border bg-muted/20 p-2 text-center">
+                                            <p className={`text-lg font-bold ${
                                                 parking.available_spots > 0 ? 'text-green-600' : 'text-red-600'
                                             }`}>
                                                 {parking.available_spots}
                                             </p>
-                                            <p className="text-xs text-muted-foreground">Available</p>
+                                            <p className="text-[10px] text-muted-foreground uppercase font-medium">Free</p>
                                         </div>
-                                        <div className="rounded-lg border p-3 text-center">
-                                            <p className="text-xl font-bold text-yellow-600">
+                                        <div className="rounded-lg border bg-muted/20 p-2 text-center">
+                                            <p className="text-lg font-bold text-yellow-600">
                                                 {parking.price_per_hour}
                                             </p>
-                                            <p className="text-xs text-muted-foreground">TND/h</p>
+                                            <p className="text-[10px] text-muted-foreground uppercase font-medium">TND/h</p>
                                         </div>
                                     </div>
 
                                     {/* Horaires */}
-                                    <p className="mt-3 text-sm text-muted-foreground text-center">
+                                    <p className="text-xs text-center text-muted-foreground mb-4 font-medium bg-muted/30 py-1.5 rounded-md">
                                         {parking.is_24h
-                                            ? '🕐 Open 24/7'
-                                            : `🕐 ${parking.opening_time || '?'} - ${parking.closing_time || '?'}`}
+                                            ? 'Open 24/7'
+                                            : `${parking.opening_time || '--:--'} - ${parking.closing_time || '--:--'}`}
                                     </p>
 
-                                    {/* Mini map */}
-                                    <div className="mt-3 rounded-lg overflow-hidden border">
-                                        <iframe
-                                            src={`https://www.openstreetmap.org/export/embed.html?bbox=${
-                                                lng - 0.003
-                                            },${
-                                                lat - 0.003
-                                            },${
-                                                lng + 0.003
-                                            },${
-                                                lat + 0.003
-                                            }&layer=mapnik&marker=${lat},${lng}`}
-                                            width="100%"
-                                            height="150"
-                                            style={{ border: 0 }}
-                                            loading="lazy"
-                                        />
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="mt-4 grid grid-cols-2 gap-2">
+                                    <div className="mt-auto pt-4 border-t grid grid-cols-2 gap-2">
                                         <Button
                                             variant="outline"
                                             size="sm"
+                                            className="w-full"
                                             onClick={() => router.visit(`/parkings/${parking.id}`)}
                                         >
-                                            <Eye className="mr-1 h-3 w-3" /> View
+                                            <Eye className="mr-1.5 h-3.5 w-3.5" /> View
                                         </Button>
+                                        
                                         <Button
                                             variant="outline"
                                             size="sm"
+                                            className="w-full"
                                             onClick={() => router.visit(`/parkings/${parking.id}/edit`)}
                                         >
-                                            <Edit className="mr-1 h-3 w-3" /> Edit
+                                            <Edit className="mr-1.5 h-3.5 w-3.5" /> Edit
                                         </Button>
+
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            className={
+                                            className={`w-full ${
                                                 parking.status === 'active'
-                                                    ? 'text-amber-600 hover:bg-amber-50'
-                                                    : 'text-green-600 hover:bg-green-50'
-                                            }
+                                                    ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'
+                                                    : 'text-green-600 hover:text-green-700 hover:bg-green-50'
+                                            }`}
                                             onClick={() => setToggleTarget(parking)}
                                         >
                                             {parking.status === 'active' ? (
-                                                <><PowerOff className="mr-1 h-3 w-3" /> Deactivate</>
+                                                <><PowerOff className="mr-1.5 h-3.5 w-3.5" /> Stop</>
                                             ) : (
-                                                <><Power className="mr-1 h-3 w-3" /> Activate</>
+                                                <><Power className="mr-1.5 h-3.5 w-3.5" /> Start</>
                                             )}
                                         </Button>
+
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            className="text-red-600 hover:bg-red-50"
+                                            className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
                                             onClick={() => setDeleteTarget(parking)}
                                         >
-                                            <Trash2 className="mr-1 h-3 w-3" /> Delete
+                                            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Del
                                         </Button>
                                     </div>
                                 </div>
                             </div>
                         );
                     })}
+
+                    {/* 🔥 CARTE VERROUILLÉE SI LIMITÉ 🔥 */}
+                    {showUpgradeMessage && (
+                        <div className="relative overflow-hidden rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-6 flex flex-col items-center justify-center text-center h-full min-h-[480px] transition-all hover:bg-slate-100 dark:hover:bg-slate-900 group">
+                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
+                            
+                            <div className="relative z-10 flex flex-col items-center">
+                                <div className="p-4 bg-white dark:bg-slate-800 rounded-full mb-4 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 group-hover:scale-110 transition-transform">
+                                    <Lock className="w-8 h-8 text-slate-400" />
+                                </div>
+                                
+                                <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                                    {hiddenCount} Hidden Parking{hiddenCount && hiddenCount > 1 ? 's' : ''}
+                                </h3>
+                                
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 mb-6 max-w-[250px] leading-relaxed">
+                                    Your subscription plan limits you to 3 visible parkings. Upgrade to Premium to manage unlimited locations.
+                                </p>
+                                
+                                <Button asChild className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white border-0 shadow-lg shadow-orange-500/20 rounded-full px-6">
+                                    <Link href="/payment">
+                                        <Crown className="w-4 h-4 mr-2 fill-current" />
+                                        Unlock All Parkings
+                                    </Link>
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
