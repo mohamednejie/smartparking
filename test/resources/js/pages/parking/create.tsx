@@ -8,9 +8,24 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import InputError from '@/components/input-error';
 import { Spinner } from '@/components/ui/spinner';
-import { MapPin, CheckCircle, AlertTriangle, Navigation } from 'lucide-react';
+import { 
+    MapPin, 
+    CheckCircle, 
+    AlertTriangle, 
+    Navigation,
+    Camera as CameraIcon,
+    Plus,
+    Trash2
+} from 'lucide-react';
 import AppLayout from '@/layouts/app-layout';
 import MapPicker from '@/components/map-picker';
+
+// Type pour les caméras dans le formulaire
+type CameraForm = {
+    name: string;
+    type: 'gate' | 'zone';
+    stream_url: string;
+};
 
 export default function CreateParking() {
     const { flash, errors: serverErrors } = usePage().props as any;
@@ -29,6 +44,8 @@ export default function CreateParking() {
         photo: null as File | null,
         city: '',
         cancel_time_limit: 30,
+        // 🔥 Ajout du tableau pour les caméras
+        cameras: [] as CameraForm[],
     });
 
     const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -76,7 +93,28 @@ export default function CreateParking() {
         });
     };
 
-    const getError = (field: string) => clientErrors[field] || errors[field];
+    const getError = (field: string) => clientErrors[field] || errors[field as keyof typeof errors];
+
+    // 🔥 Fonctions pour gérer le tableau dynamique de caméras
+    const addCamera = () => {
+        setData('cameras', [
+            ...data.cameras,
+            { name: '', type: 'zone', stream_url: '' }
+        ]);
+    };
+
+    const removeCamera = (index: number) => {
+        const newCameras = [...data.cameras];
+        newCameras.splice(index, 1);
+        setData('cameras', newCameras);
+    };
+
+    const updateCamera = (index: number, field: keyof CameraForm, value: string) => {
+        const newCameras = [...data.cameras];
+        // @ts-ignore
+        newCameras[index][field] = value;
+        setData('cameras', newCameras);
+    };
 
     // 🔥 Sélection sur la carte
     const handleLocationSelect = (lat: number, lng: number) => {
@@ -213,13 +251,13 @@ export default function CreateParking() {
                         />
                         <InputError message={getError('name')} />
                     </div>
-                     {/* ═══ city ═══ */}
+
+                    {/* ═══ City ═══ */}
                     <div className="grid gap-2">
                         <Label htmlFor="city">City *</Label>
                         <Input
                             id="city"
                             value={data.city}
-
                             onChange={(e) => {
                                 setData('city', e.target.value);
                                 validateField('city', e.target.value);
@@ -260,7 +298,7 @@ export default function CreateParking() {
                                 disabled={isLocating}
                             >
                                 {isLocating ? (
-                                    <><Spinner /> Locating...</>
+                                    <><Spinner className="mr-2 h-4 w-4" /> Locating...</>
                                 ) : (
                                     <><Navigation className="mr-1 h-4 w-4" /> Use my location</>
                                 )}
@@ -389,23 +427,6 @@ export default function CreateParking() {
                             </div>
                         )}
                     </div>
-                    {/* ═══ city ═══ */}
-                    <div className="grid gap-2">
-                        <Label htmlFor="city">City *</Label>
-                        <Input
-                            id="city"
-                            value={data.city}
-
-                            onChange={(e) => {
-                                setData('city', e.target.value);
-                                validateField('city', e.target.value);
-                            }}
-                            onBlur={(e) => validateField('city', e.target.value)}
-                            placeholder="My City"
-                            className={getError('city') ? 'border-red-500' : ''}
-                        />
-                        <InputError message={getError('city')} />
-                    </div>
 
                     {/* ═══ Cancel Time Limit ═══ */}
                     <div className="grid gap-2">
@@ -444,15 +465,99 @@ export default function CreateParking() {
                         )}
                     </div>
 
+                    {/* 🔥 SECTION CAMÉRAS 🔥 */}
+                    <div className="space-y-4 rounded-lg border p-5 bg-muted/10">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <Label className="text-base font-semibold flex items-center gap-2">
+                                    <CameraIcon className="h-5 w-5 text-primary" />
+                                    Cameras (Optional)
+                                </Label>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    Add IP cameras or DroidCam URLs (e.g. http://192.168.1.10:4747/video) to monitor your parking.
+                                </p>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" onClick={addCamera}>
+                                <Plus className="mr-1 h-4 w-4" /> Add Camera
+                            </Button>
+                        </div>
+
+                        {data.cameras.length === 0 ? (
+                            <div className="text-center py-6 text-muted-foreground text-sm border border-dashed rounded-lg bg-background">
+                                No cameras added yet.
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {data.cameras.map((camera, index) => (
+                                    <div key={index} className="flex flex-col gap-4 p-5 border rounded-lg bg-background relative shadow-sm">
+                                        <Button 
+                                            type="button" 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="absolute top-2 right-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                            onClick={() => removeCamera(index)}
+                                            title="Remove camera"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+
+                                        <div className="grid md:grid-cols-2 gap-4 pr-8">
+                                            <div className="grid gap-2">
+                                                <Label>Camera Name *</Label>
+                                                <Input 
+                                                    placeholder="e.g. Main Entrance" 
+                                                    value={camera.name}
+                                                    onChange={(e) => updateCamera(index, 'name', e.target.value)}
+                                                    required
+                                                />
+                                                <InputError message={errors[`cameras.${index}.name` as keyof typeof errors]} />
+                                            </div>
+
+                                            <div className="grid gap-2">
+                                                <Label>Type *</Label>
+                                                <select 
+                                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                                    value={camera.type}
+                                                    onChange={(e) => updateCamera(index, 'type', e.target.value)}
+                                                >
+                                                    <option value="zone">Inside Zone (Spot detection)</option>
+                                                    <option value="gate">Entrance/Exit Gate (License plates)</option>
+                                                </select>
+                                                <InputError message={errors[`cameras.${index}.type` as keyof typeof errors]} />
+                                            </div>
+
+                                            <div className="grid gap-2 md:col-span-2">
+                                                <Label>Stream URL *</Label>
+                                                <Input 
+                                                    type="url"
+                                                    placeholder="http://192.168.1.XX:4747/video" 
+                                                    value={camera.stream_url}
+                                                    onChange={(e) => updateCamera(index, 'stream_url', e.target.value)}
+                                                    required
+                                                />
+                                                <InputError message={errors[`cameras.${index}.stream_url` as keyof typeof errors]} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     {/* ═══ Submit ═══ */}
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 pt-4 border-t">
                         <Button type="submit" className="flex-1" disabled={processing}>
-                            {processing && <Spinner />} Add Parking
+                            {processing ? (
+                                <><Spinner className="mr-2 h-4 w-4" /> Saving...</>
+                            ) : (
+                                "Add Parking & Cameras"
+                            )}
                         </Button>
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => router.visit('/parkings')}
+                            disabled={processing}
                         >
                             Cancel
                         </Button>

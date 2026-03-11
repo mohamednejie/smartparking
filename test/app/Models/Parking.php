@@ -88,7 +88,7 @@ class Parking extends Model
      * Format des horaires d'ouverture
      */
     public function getOpeningHoursAttribute(): string
-    {
+    {   
         if ($this->is_24h) {
             return '24/7';
         }
@@ -116,6 +116,7 @@ class Parking extends Model
         $now = now()->format('H:i');
         return $now >= $this->opening_time && $now <= $this->closing_time;
     }
+
 
     /**
      * Pourcentage d'occupation
@@ -172,5 +173,8 @@ public function reservations()
 {
     return $this->hasMany(Reservation::class);
 }
-
+ public function cameras()
+    {
+        return $this->hasMany(Camera::class);
+    }
 }

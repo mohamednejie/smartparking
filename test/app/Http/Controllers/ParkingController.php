@@ -4,6 +4,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Parking;
+use App\Models\Camera;
+
 use App\Models\User;
 use App\Models\Reservation;
 use Illuminate\Http\Request;
@@ -77,7 +79,7 @@ class ParkingController extends Controller
     /**
      * POST /parkings — Enregistrer
      */
-    public function store(Request $request)
+     public function store(Request $request)
     {
         /** @var User $user */
         $user = auth()->user();
@@ -89,23 +91,30 @@ class ParkingController extends Controller
         }
 
         $validated = $request->validate([
-            'name'           => ['required', 'string', 'max:255'],
-            'description'    => ['nullable', 'string', 'max:1000'],
-            'latitude'       => ['required', 'numeric', 'between:-90,90'],
-            'longitude'      => ['required', 'numeric', 'between:-180,180'],
-            'address_label'  => ['nullable', 'string', 'max:500'],
-            'total_spots'    => ['required', 'integer', 'min:1'],
-            'price_per_hour' => ['required', 'numeric', 'min:0'],
-            'opening_time'   => ['nullable', 'date_format:H:i'],
-            'closing_time'   => ['nullable', 'date_format:H:i'],
-            'is_24h'         => ['boolean'],
-            'photo'          => ['required', 'image', 'max:4096'],
-            'city'           => ['required', 'string', 'max:255'],
+            'name'              => ['required', 'string', 'max:255'],
+            'description'       => ['nullable', 'string', 'max:1000'],
+            'latitude'          => ['required', 'numeric', 'between:-90,90'],
+            'longitude'         => ['required', 'numeric', 'between:-180,180'],
+            'address_label'     => ['nullable', 'string', 'max:500'],
+            'total_spots'       => ['required', 'integer', 'min:1'],
+            'price_per_hour'    => ['required', 'numeric', 'min:0'],
+            'opening_time'      => ['nullable', 'date_format:H:i'],
+            'closing_time'      => ['nullable', 'date_format:H:i'],
+            'is_24h'            => ['boolean'],
+            'photo'             => ['required', 'image', 'max:4096'],
+            'city'              => ['required', 'string', 'max:255'],
             'cancel_time_limit' => ['required', 'integer', 'min:10', 'max:1000'],
+            
+            // 🔥 NOUVEAU : Validation des caméras
+            'cameras'               => ['nullable', 'array'],
+            'cameras.*.name'        => ['required_with:cameras', 'string', 'max:255'],
+            'cameras.*.type'        => ['required_with:cameras', 'in:gate,zone'],
+            'cameras.*.stream_url'  => ['required_with:cameras', 'url', 'max:1000'],
         ]);
 
         $photoPath = $request->file('photo')->store('parkings', 'public');
 
+        // 1. Création du parking
         $parking = $user->parkings()->create([
             'name'                => $validated['name'],
             'description'         => $validated['description'] ?? null,
@@ -122,11 +131,21 @@ class ParkingController extends Controller
             'photo_path'          => $photoPath,
             'annotated_file_path' => null,
             'status'              => 'active',
-            'city'                => $validated['city'] ,
-            'cancel_time_limit'    => $validated['cancel_time_limit'] ?? 30,
+            'city'                => $validated['city'],
+            'cancel_time_limit'   => $validated['cancel_time_limit'] ?? 30,
         ]);
 
-        logger('✅ Parking créé :', $parking->toArray());
+        // 2. 🔥 NOUVEAU : Création des caméras
+        if (!empty($validated['cameras'])) {
+            foreach ($validated['cameras'] as $cameraData) {
+                $parking->cameras()->create([
+                    'name'       => $cameraData['name'],
+                    'type'       => $cameraData['type'],
+                    'stream_url' => $cameraData['stream_url'],
+                    'status'     => 'online', // Par défaut
+                ]);
+            }
+        }
 
         return redirect()->route('parkings.index')
             ->with('success', 'Parking "' . $parking->name . '" created successfully!');
@@ -135,7 +154,7 @@ class ParkingController extends Controller
     /**
      * GET /parkings/{parking} — Voir
      */
-    public function show(Parking $parking)
+   public function show(Parking $parking)
     {
         $user = auth()->user();
 
@@ -150,6 +169,9 @@ class ParkingController extends Controller
 
         // Si owner -> charger les réservations de CE parking
         if ($isOwner) {
+            // 🔥 NOUVEAU : On charge les caméras du parking pour l'owner
+            $parking->load('cameras');
+
             $reservations = Reservation::with(['driver', 'vehicle'])
                 ->where('parking_id', $parking->id)
                 ->latest('reserved_at')
@@ -197,6 +219,8 @@ class ParkingController extends Controller
             'created_at'        => $parking->created_at?->toIso8601String(),
             'city'              => $parking->city,
             'cancel_time_limit' => $parking->cancel_time_limit,
+            // 🔥 NOUVEAU : On injecte les caméras dans les ressources du parking (si owner)
+            'cameras'           => $isOwner ? $parking->cameras : [],
         ];
 
         return Inertia::render('parking/show', [
@@ -226,6 +250,9 @@ class ParkingController extends Controller
             abort(403);
         }
 
+        // On charge les caméras avec le parking
+        $parking->load('cameras');
+
         return Inertia::render('parking/edit', [
             'parking' => [
                 ...$parking->toArray(),
@@ -238,26 +265,33 @@ class ParkingController extends Controller
     /**
      * PUT /parkings/{parking} — Mettre à jour
      */
-    public function update(Request $request, Parking $parking)
+     public function update(Request $request, Parking $parking)
     {
         if ($parking->user_id !== auth()->id()) {
             abort(403);
         }
 
         $validated = $request->validate([
-            'name'           => ['required', 'string', 'max:255'],
-            'description'    => ['nullable', 'string', 'max:1000'],
-            'latitude'       => ['required', 'numeric', 'between:-90,90'],
-            'longitude'      => ['required', 'numeric', 'between:-180,180'],
-            'address_label'  => ['nullable', 'string', 'max:500'],
-            'total_spots'    => ['required', 'integer', 'min:1'],
-            'price_per_hour' => ['required', 'numeric', 'min:0'],
-            'opening_time'   => ['nullable', 'date_format:H:i'],
-            'closing_time'   => ['nullable', 'date_format:H:i'],
-            'is_24h'         => ['boolean'],
-            'photo'          => ['nullable', 'image', 'max:4096'],
-            'city'           => ['required', 'string', 'max:255'],
+            'name'              => ['required', 'string', 'max:255'],
+            'description'       => ['nullable', 'string', 'max:1000'],
+            'latitude'          => ['required', 'numeric', 'between:-90,90'],
+            'longitude'         => ['required', 'numeric', 'between:-180,180'],
+            'address_label'     => ['nullable', 'string', 'max:500'],
+            'total_spots'       => ['required', 'integer', 'min:1'],
+            'price_per_hour'    => ['required', 'numeric', 'min:0'],
+            'opening_time'      => ['nullable', 'date_format:H:i'],
+            'closing_time'      => ['nullable', 'date_format:H:i'],
+            'is_24h'            => ['boolean'],
+            'photo'             => ['nullable', 'image', 'max:4096'],
+            'city'              => ['required', 'string', 'max:255'],
             'cancel_time_limit' => ['required', 'integer', 'min:10', 'max:1000'],
+            
+            // 🔥 NOUVEAU : Validation des caméras
+            'cameras'               => ['nullable', 'array'],
+            'cameras.*.id'          => ['nullable', 'exists:cameras,id'], // ID pour modifier, sans ID pour créer
+            'cameras.*.name'        => ['required_with:cameras', 'string', 'max:255'],
+            'cameras.*.type'        => ['required_with:cameras', 'in:gate,zone'],
+            'cameras.*.stream_url'  => ['required_with:cameras', 'url', 'max:1000'],
         ]);
 
         if ($request->hasFile('photo')) {
@@ -274,6 +308,7 @@ class ParkingController extends Controller
         $spotsDiff = $validated['total_spots'] - $parking->total_spots;
         $newAvailable = max(0, $parking->available_spots + $spotsDiff);
 
+        // 1. Mise à jour du parking
         $parking->update([
             'name'                => $validated['name'],
             'description'         => $validated['description'] ?? null,
@@ -288,11 +323,44 @@ class ParkingController extends Controller
             'is_24h'              => $validated['is_24h'] ?? false,
             'photo_path'          => $validated['photo_path'] ?? $parking->photo_path,
             'annotated_file_path' => $validated['annotated_file_path'] ?? $parking->annotated_file_path,  
-            'city'                => $validated['city'] ,
-            'cancel_time_limit'    => $validated['cancel_time_limit'] ?? $parking->cancel_time_limit,
+            'city'                => $validated['city'],
+            'cancel_time_limit'   => $validated['cancel_time_limit'] ?? $parking->cancel_time_limit,
         ]);
 
-        logger('✏️ Parking mis à jour :', $parking->fresh()->toArray());
+        // 2. 🔥 NOUVEAU : Synchronisation des caméras
+        if (isset($validated['cameras'])) {
+            $cameraIdsToKeep = [];
+
+            foreach ($validated['cameras'] as $cameraData) {
+                if (isset($cameraData['id'])) {
+                    // Mettre à jour une caméra existante
+                    $camera = $parking->cameras()->find($cameraData['id']);
+                    if ($camera) {
+                        $camera->update([
+                            'name'       => $cameraData['name'],
+                            'type'       => $cameraData['type'],
+                            'stream_url' => $cameraData['stream_url'],
+                        ]);
+                        $cameraIdsToKeep[] = $camera->id;
+                    }
+                } else {
+                    // Créer une nouvelle caméra ajoutée depuis le formulaire d'édition
+                    $newCamera = $parking->cameras()->create([
+                        'name'       => $cameraData['name'],
+                        'type'       => $cameraData['type'],
+                        'stream_url' => $cameraData['stream_url'],
+                        'status'     => 'online',
+                    ]);
+                    $cameraIdsToKeep[] = $newCamera->id;
+                }
+            }
+
+            // Supprimer les caméras qui ont été retirées dans le frontend
+            $parking->cameras()->whereNotIn('id', $cameraIdsToKeep)->delete();
+        } else {
+            // Si le tableau cameras est complètement vide/absent, on supprime toutes les caméras
+            $parking->cameras()->delete();
+        }
 
         return redirect()->route('parkings.index')
             ->with('success', 'Parking "' . $parking->name . '" updated successfully!');
