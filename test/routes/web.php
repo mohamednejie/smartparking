@@ -56,6 +56,7 @@ Route::middleware(['auth'])->group(function () {
 
 
 
+
 use App\Http\Controllers\BraintreeController;
 
 Route::middleware(['auth'])->group(function () {

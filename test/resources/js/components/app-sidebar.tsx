@@ -50,6 +50,11 @@ export function AppSidebar() {
                       href: '/payment',
                       icon: Crown,
                   } as NavItem,
+                  {
+                      title: 'Booking',
+                      href: '/parkings/available',
+                      icon: CalendarCheck,
+                  } as NavItem,
                   
               ]
             : []),

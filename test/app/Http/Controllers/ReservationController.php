@@ -6,6 +6,7 @@ use App\Models\Parking;
 use App\Models\Reservation;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Log; 
 use Inertia\Inertia;
 
 class ReservationController extends Controller
@@ -310,4 +311,82 @@ class ReservationController extends Controller
 
         return true;
     }
+
+
+     public function handleEntranceWebhook(Request $request)
+    {
+        $plateNumber = $request->input('plate_number');
+
+        if (!$plateNumber) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Aucune plaque fournie.'
+            ], 400);
+        }
+
+        Log::info("📷 Webhook IA reçu pour la plaque : " . $plateNumber);
+
+        // 1. Chercher le véhicule avec cette plaque (insensible à la casse)
+        $vehicle = Vehicle::where('license_plate', 'ILIKE', $plateNumber)
+                          ->orWhereRaw("REPLACE(UPPER(license_plate), '-', '') = ?", [str_replace('-', '', strtoupper($plateNumber))])
+                          ->first();
+
+        if (!$vehicle) {
+            Log::info("❌ Véhicule inconnu : " . $plateNumber);
+            return response()->json([
+                'status' => 'unknown',
+                'message' => "Véhicule non reconnu dans le système."
+            ]);
+        }
+
+        // 2. Chercher une réservation 'pending' (En attente d'entrer)
+        $pendingReservation = Reservation::where('vehicle_id', $vehicle->id)
+                                         ->where('status', 'pending')
+                                         ->first();
+
+        if ($pendingReservation) {
+            // Le véhicule entre !
+            $pendingReservation->status = 'active'; // Il est maintenant dans le parking
+            $pendingReservation->save();
+
+            Log::info("✅ Entrée autorisée pour : " . $plateNumber);
+
+            return response()->json([
+                'status' => 'authorized',
+                'message' => "Accès autorisé. Bienvenue !"
+            ]);
+        }
+
+        // 3. Chercher une réservation 'active' (Le véhicule sort)
+        $activeReservation = Reservation::where('vehicle_id', $vehicle->id)
+                                        ->where('status', 'active')
+                                        ->first();
+
+        if ($activeReservation) {
+            // Le véhicule sort !
+            $activeReservation->status = 'completed'; // La session est terminée
+            $activeReservation->save();
+
+            // 🔥 On libère la place dans le parking !
+            $parking = $activeReservation->parking;
+            if ($parking && $parking->available_spots < $parking->total_spots) {
+                $parking->increment('available_spots');
+            }
+
+            Log::info("👋 Sortie validée pour : " . $plateNumber);
+
+            return response()->json([
+                'status' => 'exiting',
+                'message' => "Sortie validée. Au revoir !"
+            ]);
+        }
+
+        // 4. Le véhicule est connu mais n'a pas de réservation en cours
+        Log::info("⚠️ Le véhicule {$plateNumber} est connu, mais sans réservation.");
+        return response()->json([
+            'status' => 'no_reservation',
+            'message' => "Aucune réservation active pour ce véhicule."
+        ]);
+    }
+
 }
