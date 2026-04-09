@@ -16,6 +16,7 @@ class Camera extends Model
         'stream_url',
         'status',
         'location_details',
+        'gate_mode',   // 'entrance' | 'exit'
     ];
 
     /**

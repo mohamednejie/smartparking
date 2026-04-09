@@ -70,4 +70,11 @@ Route::middleware(['auth'])->group(function () {
 
 });
 
+use App\Http\Controllers\PaymentDriverController;
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/braintree/token', [PaymentDriverController::class, 'token'])->name('braintree.token');
+    Route::post('/braintree/checkout/reservation', [PaymentDriverController::class, 'checkoutReservation'])->name('braintree.checkout.reservation');
+});
+
 require __DIR__.'/settings.php';

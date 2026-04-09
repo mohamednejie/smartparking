@@ -27,6 +27,7 @@ class Parking extends Model
         'is_24h',
         'photo_path',
         'annotated_file_path',
+        'parking_slots',
         'status',
         'city',
         'cancel_time_limit',
@@ -39,6 +40,7 @@ class Parking extends Model
             'price_per_hour' => 'decimal:2',
             'is_24h'         => 'boolean',
             'cancel_time_limit'  => 'integer',
+            'parking_slots'  => 'array', 
         ];
     }
 
@@ -61,7 +63,28 @@ class Parking extends Model
             ? asset('storage/' . $this->annotated_file_path)
             : null;
     }
+    public function getSlotsForFlaskAttribute(): array
+    {
+        if (empty($this->parking_slots)) {
+            return [];
+        }
 
+        return collect($this->parking_slots)->map(function ($slot) {
+            // Chaque slot a un format {id: x, points: [{x, y}, ...]}
+            // On le convertit en [[x, y], [x, y], ...]
+            return collect($slot['points'] ?? [])->map(function ($point) {
+                return [$point['x'], $point['y']];
+            })->toArray();
+        })->toArray();
+    }
+
+    /**
+     * ✅ NOUVEAU : Nombre de slots définis
+     */
+    public function getSlotsCountAttribute(): int
+    {
+        return count($this->parking_slots ?? []);
+    }
     /**
      * Extrait la ville depuis address_label si city n'est pas défini
      */

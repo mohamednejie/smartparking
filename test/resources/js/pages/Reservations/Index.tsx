@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Head, router, usePage } from '@inertiajs/react'
 import { toast } from 'sonner'
+import axios from 'axios'
 import AppLayout from '@/layouts/app-layout'
 import {
   CarFront,
@@ -12,6 +13,11 @@ import {
   AlertCircle,
   XCircle,
   Timer,
+  CreditCard,
+  Loader2,
+  CheckCircle2,
+  DoorOpen,
+  Receipt,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -22,15 +28,25 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+import PaymentModal from '@/Components/PaymentModal'
+
+// ─── TYPES ───────────────────────────────────────────────────────────────────
 
 type Reservation = {
   id: number
   status: string
   reserved_at: string
   remaining_seconds: number | null
+  parking_id: number
+  total_price: number
+  duration_minutes?: number | null
+  exit_plate?: string | null
+  actual_exit_at?: string | null
+  paid_at?: string | null
   parking: {
     name: string
     address_label: string | null
+    cancel_time_limit?: number | null
   }
   vehicle: {
     license_plate: string
@@ -47,6 +63,8 @@ type PageProps = {
   }
   errors?: Record<string, string>
 }
+
+// ─── STATUS CONFIG ────────────────────────────────────────────────────────────
 
 const statusConfig: Record<
   string,
@@ -70,6 +88,18 @@ const statusConfig: Record<
     text: 'text-sky-200',
     dot: 'bg-sky-400',
   },
+  awaiting_payment: {
+    label: 'Payment required',
+    bg: 'bg-rose-500/20 border-rose-500/60',
+    text: 'text-rose-200',
+    dot: 'bg-rose-400',
+  },
+  paid: {
+    label: 'Paid',
+    bg: 'bg-teal-500/10 border-teal-500/40',
+    text: 'text-teal-200',
+    dot: 'bg-teal-400',
+  },
   cancelled_auto: {
     label: 'Cancelled (auto)',
     bg: 'bg-red-500/5 border-red-500/30',
@@ -90,7 +120,8 @@ const statusConfig: Record<
   },
 }
 
-// Time left au format MM:SS (toujours 2 chiffres)
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+
 function formatRemaining(sec: number | null): string {
   if (sec == null || sec <= 0) return '00:00'
   const totalSec = Math.floor(sec)
@@ -101,24 +132,44 @@ function formatRemaining(sec: number | null): string {
     .padStart(2, '0')}`
 }
 
+function formatTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  return new Date(dateStr).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+// ─── COMPOSANT PRINCIPAL ──────────────────────────────────────────────────────
+
 export default function ReservationsIndex() {
   const { reservations: rawReservations, flash, errors: pageErrors } =
     usePage<PageProps>().props
 
-  const reservations: Reservation[] = rawReservations ?? []
+  const [reservations, setReservations] = useState<Reservation[]>(
+    rawReservations ?? []
+  )
   const errors = pageErrors ?? {}
+
+  useEffect(() => {
+    setReservations(rawReservations ?? [])
+  }, [rawReservations])
 
   const total = reservations.length
   const activeCount = reservations.filter((r) =>
     ['pending', 'active'].includes(r.status)
   ).length
+  const awaitingPaymentCount = reservations.filter(
+    (r) => r.status === 'awaiting_payment'
+  ).length
 
-  // Countdown state
+  // ─── Countdown state ──────────────────────────────────────────────────────
+
   const [remainingMap, setRemainingMap] = useState<
     Record<number, number | null>
   >(() => {
     const initial: Record<number, number | null> = {}
-    reservations.forEach((r) => {
+    ;(rawReservations ?? []).forEach((r) => {
       initial[r.id] =
         typeof r.remaining_seconds === 'number'
           ? Math.floor(r.remaining_seconds)
@@ -152,21 +203,16 @@ export default function ReservationsIndex() {
         return next
       })
     }, 1000)
-
     return () => clearInterval(interval)
   }, [])
 
-  // Toasts global flash
+  // ─── Toasts flash ─────────────────────────────────────────────────────────
+
   useEffect(() => {
-    if (flash?.success) {
-      toast.success(flash.success)
-    }
-    if (flash?.error) {
-      toast.error(flash.error)
-    }
+    if (flash?.success) toast.success(flash.success)
+    if (flash?.error) toast.error(flash.error)
   }, [flash?.success, flash?.error])
 
-  // Toast erreur spécifique réservation
   useEffect(() => {
     if (errors.reservation) {
       toast.error(errors.reservation, {
@@ -175,7 +221,22 @@ export default function ReservationsIndex() {
     }
   }, [errors.reservation])
 
-  // ─── Modal de confirmation d’annulation ─────────────
+  // ✅ Payment Modal State
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
+
+  const handlePayClick = (reservation: Reservation) => {
+    setSelectedReservation(reservation)
+    setPaymentModalOpen(true)
+  }
+
+  const handlePaymentSuccess = () => {
+    // Recharger uniquement les réservations
+    router.reload({ only: ['reservations'] })
+  }
+
+  // ─── Modal annulation ─────────────────────────────────────────────────────
+
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [reservationToCancel, setReservationToCancel] =
     useState<Reservation | null>(null)
@@ -187,7 +248,6 @@ export default function ReservationsIndex() {
 
   const handleConfirmCancel = () => {
     if (!reservationToCancel) return
-
     router.patch(
       `/reservations/${reservationToCancel.id}/cancel`,
       {},
@@ -204,15 +264,17 @@ export default function ReservationsIndex() {
     )
   }
 
+  // ─── RENDER ───────────────────────────────────────────────────────────────
+
   return (
     <AppLayout
       breadcrumbs={[{ title: 'My Reservations', href: '/reservations' }]}
     >
       <Head title="My Reservations" />
 
-      {/* Conteneur pleine hauteur pour pousser les tickets vers le bas */}
       <div className="mx-auto max-w-5xl py-8 px-4 flex flex-col min-h-[calc(100vh-5rem)] space-y-4">
-        {/* Header */}
+
+        {/* ── Header ────────────────────────────────────────────────────── */}
         <div>
           <div className="flex items-center justify-between gap-3">
             <div className="space-y-1">
@@ -226,37 +288,55 @@ export default function ReservationsIndex() {
               </p>
             </div>
 
-            {/* Stats */}
             <div className="hidden sm:flex gap-3 text-xs">
               <div className="rounded-lg border bg-card px-3 py-2 shadow-sm">
-                <p className="text-muted-foreground uppercase tracking-wide">
-                  Total
-                </p>
+                <p className="text-muted-foreground uppercase tracking-wide">Total</p>
                 <p className="text-base font-semibold">{total}</p>
               </div>
               <div className="rounded-lg border bg-card px-3 py-2 shadow-sm">
-                <p className="text-muted-foreground uppercase tracking-wide">
-                  Active / Pending
-                </p>
+                <p className="text-muted-foreground uppercase tracking-wide">Active / Pending</p>
                 <p className="text-base font-semibold">{activeCount}</p>
               </div>
+              {awaitingPaymentCount > 0 && (
+                <div className="rounded-lg border border-rose-300 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 shadow-sm animate-pulse">
+                  <p className="text-rose-600 dark:text-rose-400 uppercase tracking-wide text-[10px]">
+                    À payer
+                  </p>
+                  <p className="text-base font-semibold text-rose-700 dark:text-rose-300">
+                    {awaitingPaymentCount}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Zone des tickets, poussés vers le bas */}
+        {/* ✅ Bannière alerte */}
+        {awaitingPaymentCount > 0 && (
+          <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/40 dark:border-rose-900 px-4 py-3 shadow-sm">
+            <CreditCard className="h-5 w-5 text-rose-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-rose-800 dark:text-rose-200">
+                {awaitingPaymentCount} véhicule{awaitingPaymentCount > 1 ? 's' : ''} en attente de paiement
+              </p>
+              <p className="text-xs text-rose-600 dark:text-rose-400 mt-0.5">
+                La barrière est bloquée. Cliquez sur "Pay Now" pour débloquer la sortie.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Tickets ───────────────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col">
           {reservations.length === 0 ? (
             <div className="mt-auto mb-4 rounded-2xl border border-dashed border-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 px-6 py-10 text-center shadow-sm">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-600/5 text-blue-600 mb-3">
                 <TicketIcon className="h-7 w-7" />
               </div>
-              <h2 className="text-lg font-semibold mb-1">
-                No reservations yet
-              </h2>
+              <h2 className="text-lg font-semibold mb-1">No reservations yet</h2>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
                 When you book a parking spot, your reservations will appear
-                here as elegant digital tickets, one below the other.
+                here as elegant digital tickets.
               </p>
             </div>
           ) : (
@@ -269,21 +349,43 @@ export default function ReservationsIndex() {
                   r.status === 'pending' &&
                   typeof remainingSec === 'number' &&
                   remainingSec > 0
+                const isAwaitingPayment = r.status === 'awaiting_payment'
+                const isPaid = r.status === 'paid'
 
                 return (
                   <div
                     key={r.id}
-                    className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50 shadow-xl border border-slate-800/80"
+                    className={`relative overflow-hidden rounded-2xl text-slate-50 shadow-xl border transition-all duration-300 ${
+                      isAwaitingPayment
+                        ? 'bg-gradient-to-br from-slate-950 via-rose-950/30 to-slate-950 border-rose-500/40 shadow-rose-900/30'
+                        : isPaid
+                        ? 'bg-gradient-to-br from-slate-950 via-teal-950/20 to-slate-950 border-teal-500/30'
+                        : 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border-slate-800/80'
+                    }`}
                   >
-                    {/* Bandeau gauche */}
-                    <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-b from-blue-700 via-blue-600 to-blue-800">
+                    {/* ── Bandeau gauche ───────────────────────────────── */}
+                    <div
+                      className={`absolute inset-y-0 left-0 w-24 ${
+                        isAwaitingPayment
+                          ? 'bg-gradient-to-b from-rose-700 via-rose-600 to-rose-800'
+                          : isPaid
+                          ? 'bg-gradient-to-b from-teal-700 via-teal-600 to-teal-800'
+                          : 'bg-gradient-to-b from-blue-700 via-blue-600 to-blue-800'
+                      }`}
+                    >
                       <div className="absolute -right-3 top-16 h-6 w-6 rounded-full bg-slate-950 border border-slate-800" />
                       <div className="absolute -right-3 bottom-16 h-6 w-6 rounded-full bg-slate-950 border border-slate-800" />
 
                       <div className="flex h-full flex-col items-center justify-between py-4">
                         <div className="flex flex-col items-center gap-1">
                           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 border border-white/30">
-                            <CarFront className="h-5 w-5 text-white" />
+                            {isAwaitingPayment ? (
+                              <CreditCard className="h-5 w-5 text-white" />
+                            ) : isPaid ? (
+                              <CheckCircle2 className="h-5 w-5 text-white" />
+                            ) : (
+                              <CarFront className="h-5 w-5 text-white" />
+                            )}
                           </div>
                           <span className="text-[10px] uppercase tracking-[0.2em] text-white/70">
                             Parking
@@ -303,9 +405,10 @@ export default function ReservationsIndex() {
 
                     <div className="absolute inset-y-4 left-24 w-px bg-gradient-to-b from-slate-700/60 via-slate-600/30 to-slate-700/60" />
 
-                    {/* Contenu ticket */}
+                    {/* ── Contenu ticket ───────────────────────────────── */}
                     <div className="ml-24 flex h-full flex-col justify-between p-4">
-                      {/* Haut : parking + statut + temps / cancel */}
+
+                      {/* Haut : parking + statut + actions */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-1">
                           <p className="text-sm font-semibold leading-tight">
@@ -320,29 +423,21 @@ export default function ReservationsIndex() {
                         </div>
 
                         <div className="flex flex-col items-end gap-1">
-                          {/* Badge statut */}
                           <div
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${cfg.bg} ${cfg.text}`}
                           >
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`}
-                            />
+                            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot} ${isAwaitingPayment ? 'animate-pulse' : ''}`} />
                             <span>{cfg.label}</span>
                           </div>
 
-                          {/* Temps restant + bouton cancel */}
                           {r.status === 'pending' && (
                             <div className="flex items-center gap-1">
                               {typeof remainingSec === 'number' && (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-200 border border-slate-700">
                                   <Timer className="h-3 w-3 text-amber-300" />
-                                  <span>
-                                    Time left:{' '}
-                                    {formatRemaining(remainingSec)}
-                                  </span>
+                                  <span>Time left: {formatRemaining(remainingSec)}</span>
                                 </span>
                               )}
-
                               {canCancel && (
                                 <button
                                   type="button"
@@ -355,6 +450,13 @@ export default function ReservationsIndex() {
                               )}
                             </div>
                           )}
+
+                          {isPaid && r.paid_at && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 border border-teal-500/40 px-2 py-0.5 text-[10px] text-teal-200">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Payé à {formatTime(r.paid_at)}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -365,14 +467,72 @@ export default function ReservationsIndex() {
                             Vehicle
                           </span>
                           <span className="font-medium text-slate-50">
-                            {r.vehicle.license_plate}
+                            {r.exit_plate ?? r.vehicle.license_plate}
                           </span>
                           <span className="text-slate-300">
-                            {r.vehicle.brand ?? ''}{' '}
-                            {r.vehicle.model ?? ''}
+                            {r.vehicle.brand ?? ''} {r.vehicle.model ?? ''}
                           </span>
                         </div>
+
+                        {r.duration_minutes != null && Number(r.total_price) > 0 && (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <Timer className="h-3 w-3" />
+                              {r.duration_minutes} min
+                            </span>
+                            <span className={`text-sm font-bold ${isAwaitingPayment ? 'text-rose-300' : isPaid ? 'text-teal-300' : 'text-slate-200'}`}>
+                              {Number(r.total_price).toFixed(2)} TND
+                            </span>
+                          </div>
+                        )}
                       </div>
+
+                      {/* ✅ BLOC PAIEMENT BRAINTREE — awaiting_payment */}
+                      {isAwaitingPayment && (
+                        <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 flex items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-rose-200 flex items-center gap-1.5">
+                              <Receipt className="h-3.5 w-3.5" />
+                              Paiement requis pour sortir
+                            </p>
+                            <p className="text-[11px] text-rose-300/80 mt-0.5">
+                              Votre véhicule a quitté la zone ·{' '}
+                              {r.duration_minutes != null
+                                ? `${r.duration_minutes} min`
+                                : '—'}
+                            </p>
+                            {r.actual_exit_at && (
+                              <p className="text-[10px] text-rose-400/70 mt-0.5 flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                Sortie détectée à {formatTime(r.actual_exit_at)}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                            <p className="text-lg font-bold text-rose-200">
+                              {Number(r.total_price).toFixed(2)} TND
+                            </p>
+                            <Button
+                              size="sm"
+                              className="gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold px-4"
+                              onClick={() => handlePayClick(r)}
+                            >
+                              <CreditCard className="h-3.5 w-3.5" />
+                              Pay Now
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {isPaid && (
+                        <div className="mt-3 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 flex items-center gap-2">
+                          <DoorOpen className="h-4 w-4 text-teal-400 flex-shrink-0" />
+                          <p className="text-[11px] text-teal-200">
+                            Paiement confirmé — La barrière a été ouverte.
+                          </p>
+                        </div>
+                      )}
 
                       {/* Bas : date/heure */}
                       <div className="mt-3 flex items-center justify-between text-[11px] text-slate-300">
@@ -383,8 +543,7 @@ export default function ReservationsIndex() {
                               Reserved at
                             </span>
                             <span>
-                              {reservedAt.toLocaleDateString()}{' '}
-                              •{' '}
+                              {reservedAt.toLocaleDateString()} •{' '}
                               {reservedAt.toLocaleTimeString([], {
                                 hour: '2-digit',
                                 minute: '2-digit',
@@ -406,7 +565,7 @@ export default function ReservationsIndex() {
         </div>
       </div>
 
-      {/* Modal de confirmation d'annulation */}
+      {/* ── Modal annulation ────────────────────────────────────────────────── */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
@@ -451,6 +610,19 @@ export default function ReservationsIndex() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ✅ MODAL PAIEMENT BRAINTREE */}
+      {selectedReservation && (
+        <PaymentModal
+          isOpen={paymentModalOpen}
+          onClose={() => {
+            setPaymentModalOpen(false)
+            setSelectedReservation(null)
+          }}
+          reservation={selectedReservation}
+          onSuccess={handlePaymentSuccess}
+        />
+      )}
     </AppLayout>
   )
 }
