@@ -37,50 +37,67 @@ type PaymentModalProps = {
 export default function PaymentModal({ isOpen, onClose, reservation, onSuccess }: PaymentModalProps) {
     const dropinContainer = useRef<HTMLDivElement>(null);
     const instanceRef = useRef<any>(null);
-    const isInitializingRef = useRef(false);
 
     const [loadingToken, setLoadingToken] = useState(true);
     const [processingPayment, setProcessingPayment] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
     const [initError, setInitError] = useState<string | null>(null);
 
-    // ✅ Reset state on open/close to ensure clean start every time
+    // ✅ RESET complet quand le modal se ferme
     useEffect(() => {
         if (!isOpen) {
-            setIsInitialized(false);
-            setInitError(null);
+            // Teardown de l'instance Braintree
+            if (instanceRef.current) {
+                instanceRef.current.teardown().catch((err: any) => {
+                    console.warn('Teardown cleanup:', err);
+                });
+                instanceRef.current = null;
+            }
+            
+            // Reset tous les états
             setLoadingToken(true);
             setProcessingPayment(false);
-            // Don't remove data here so we can keep the nonce if reopened quickly, 
-            // but teardown ensures no ghost elements remain
+            setIsInitialized(false);
+            setInitError(null);
         }
     }, [isOpen]);
 
+    // ✅ Initialisation Braintree
     useEffect(() => {
         if (!isOpen) return;
 
         let isMounted = true;
+        let initializationAttempted = false;
 
         const initializeBraintree = async () => {
-            // Prevent race conditions / duplicate initiations
-            if (isInitializingRef.current || instanceRef.current) {
+            // Éviter les doubles initialisations
+            if (initializationAttempted || instanceRef.current) {
                 return;
             }
             
-            isInitializingRef.current = true;
+            initializationAttempted = true;
             setLoadingToken(true);
             setInitError(null);
+            setIsInitialized(false);
 
             try {
-                // 🔐 Fetch Token with timeout
+                console.log('🔵 Fetching Braintree token...');
+                
+                // 🔐 Récupération du token avec timeout
                 const response = await axios.get('/braintree/token', {
-                    timeout: 10000,
+                    timeout: 15000,
                 });
                 
-                if (!isMounted || !dropinContainer.current) return;
+                console.log('✅ Token received:', response.data.token ? 'OK' : 'MISSING');
+                
+                if (!isMounted || !dropinContainer.current) {
+                    console.warn('⚠️ Component unmounted or container missing');
+                    return;
+                }
 
-                // Safe teardown if switching between states
+                // Cleanup de l'ancienne instance si elle existe
                 if (instanceRef.current) {
+                    console.log('🧹 Cleaning up old instance...');
                     try {
                         await instanceRef.current.teardown();
                     } catch (e) {
@@ -89,10 +106,15 @@ export default function PaymentModal({ isOpen, onClose, reservation, onSuccess }
                     instanceRef.current = null;
                 }
 
+                console.log('🔵 Creating Braintree Drop-in UI...');
+
+                // 🎨 Création de l'interface Braintree
                 const gateway = await dropin.create({
                     authorization: response.data.token,
                     container: dropinContainer.current,
-                    paypal: false,
+                    paypal: {
+                        flow: 'vault', // ou 'checkout' selon vos besoins
+                    },
                     card: {
                         overrides: {
                             styles: {
@@ -111,44 +133,68 @@ export default function PaymentModal({ isOpen, onClose, reservation, onSuccess }
                     },
                 });
 
+                console.log('✅ Braintree Drop-in created successfully');
+
                 if (isMounted) {
                     instanceRef.current = gateway;
                     setIsInitialized(true);
+                    setLoadingToken(false); // ✅ IMPORTANT : Désactiver le loading
                 }
             } catch (error: any) {
-                console.error('Braintree init error:', error);
-                const message = error.response?.data?.message || 'Failed to load payment gateway';
+                console.error('❌ Braintree initialization error:', error);
+                
+                const message = error.response?.data?.message 
+                    || error.message 
+                    || 'Failed to load payment gateway. Please try again.';
                 
                 if (isMounted) {
                     setInitError(message);
-                    setLoadingToken(false);
-                    // Only show toast once, not every render
+                    setLoadingToken(false); // ✅ Désactiver le loading même en cas d'erreur
+                    setIsInitialized(false);
+                    
+                    toast.error('Payment gateway error', {
+                        description: message,
+                        duration: 5000,
+                    });
                 }
-            } finally {
-                isInitializingRef.current = false;
-                if (isMounted && !initError) setLoadingToken(false);
             }
         };
 
         initializeBraintree();
 
+        // Cleanup à la destruction du composant
         return () => {
             isMounted = false;
             if (instanceRef.current) {
                 instanceRef.current.teardown().catch(() => {});
+                instanceRef.current = null;
             }
         };
-    }, [isOpen]);
+    }, [isOpen, reservation.id]); // ✅ Ajout de reservation.id pour réinitialiser si changement
 
+    // ✅ Traitement du paiement
     const handlePayment = async () => {
-        if (!instanceRef.current || processingPayment || !isInitialized) return;
+        if (!instanceRef.current || processingPayment || !isInitialized) {
+            console.warn('⚠️ Payment not ready:', { 
+                hasInstance: !!instanceRef.current, 
+                processing: processingPayment, 
+                initialized: isInitialized 
+            });
+            return;
+        }
 
         setProcessingPayment(true);
         const toastId = toast.loading('Processing payment securely...');
 
         try {
+            console.log('🔵 Requesting payment method...');
+            
+            // Récupération du nonce
             const { nonce } = await instanceRef.current.requestPaymentMethod();
+            
+            console.log('✅ Nonce received:', nonce ? 'OK' : 'MISSING');
 
+            // Envoi au serveur
             const response = await axios.post(
                 '/braintree/checkout/reservation', 
                 {
@@ -158,37 +204,61 @@ export default function PaymentModal({ isOpen, onClose, reservation, onSuccess }
                 { timeout: 30000 }
             );
 
+            console.log('📥 Server response:', response.data);
+
             if (response.data.success) {
                 toast.success('✅ Payment successful! Barrier opened.', { id: toastId });
+                
+                // Callback de succès
                 onSuccess();
                 
-                // Delay close slightly to allow user to read success toast
+                // Fermeture du modal avec délai pour lire le toast
                 setTimeout(() => {
                     onClose();
-                }, 600);
+                }, 800);
             } else {
                 throw new Error(response.data.message || 'Payment rejected by server');
             }
         } catch (error: any) {
-            console.error('Payment failed:', error);
+            console.error('❌ Payment failed:', error);
             
-            // Specific error handling for common cases
+            // Gestion des erreurs spécifiques
+            let errorMessage = 'Payment failed. Please try again.';
+            
             if (error.message === 'No payment method is available.') {
-                toast.error('Please fill in all card details correctly', { id: toastId });
-            } else {
-                const msg = error.response?.data?.message || error.message || 'Payment failed. Please try again.';
-                toast.error(msg, { id: toastId });
+                errorMessage = 'Please fill in all card details correctly';
+            } else if (error.response?.data?.message) {
+                errorMessage = error.response.data.message;
+            } else if (error.message) {
+                errorMessage = error.message;
             }
+            
+            toast.error(errorMessage, { 
+                id: toastId,
+                duration: 6000,
+            });
         } finally {
             setProcessingPayment(false);
         }
     };
 
+    // ✅ Réessayer l'initialisation
     const handleRetry = () => {
         setInitError(null);
-        window.location.reload(); // Or trigger initialization manually if you refactor hooks
+        setLoadingToken(true);
+        setIsInitialized(false);
+        
+        // Force un re-render en changeant l'état
+        if (instanceRef.current) {
+            instanceRef.current.teardown().catch(() => {});
+            instanceRef.current = null;
+        }
+        
+        // Recharger la page entière en dernier recours
+        window.location.reload();
     };
 
+    // ✅ Fermeture du modal
     const handleClose = () => {
         if (!processingPayment) {
             onClose();
@@ -200,6 +270,7 @@ export default function PaymentModal({ isOpen, onClose, reservation, onSuccess }
             <DialogContent 
                 className="sm:max-w-[500px] p-0 max-h-[90vh] flex flex-col overflow-hidden"
                 onPointerDownOutside={(e) => processingPayment && e.preventDefault()}
+                onEscapeKeyDown={(e) => processingPayment && e.preventDefault()}
             >
                 {/* --- Header (Fixed) --- */}
                 <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white relative flex-shrink-0">
@@ -251,13 +322,16 @@ export default function PaymentModal({ isOpen, onClose, reservation, onSuccess }
 
                     {/* Payment Form Container */}
                     <div className="p-6">
+                        {/* ✅ Loading State */}
                         {loadingToken && !initError && (
                             <div className="flex flex-col items-center justify-center py-12 space-y-4 min-h-[200px]">
                                 <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-                                <p className="text-sm text-slate-500 animate-pulse">Loading secure payment...</p>
+                                <p className="text-sm text-slate-500 animate-pulse">Loading secure payment gateway...</p>
+                                <p className="text-xs text-slate-400">This may take a few seconds</p>
                             </div>
                         )}
 
+                        {/* ✅ Error State */}
                         {initError && (
                             <div className="flex flex-col items-center justify-center py-12 space-y-4 min-h-[200px]">
                                 <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
@@ -274,7 +348,11 @@ export default function PaymentModal({ isOpen, onClose, reservation, onSuccess }
                             </div>
                         )}
 
-                        <div ref={dropinContainer} className={loadingToken || initError ? 'hidden' : ''} />
+                        {/* ✅ Braintree Drop-in Container */}
+                        <div 
+                            ref={dropinContainer} 
+                            className={`${loadingToken || initError ? 'hidden' : 'block'} min-h-[200px]`}
+                        />
                     </div>
                 </div>
 

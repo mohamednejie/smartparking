@@ -52,7 +52,7 @@ class ParkingController extends Controller
     // GET /parkings/create
     // ══════════════════════════════════════════════════════════════════════════
 
-    public function create()
+      public function create()
     {
         /** @var User $user */
         $user = auth()->user();
@@ -72,138 +72,173 @@ class ParkingController extends Controller
     // ══════════════════════════════════════════════════════════════════════════
 
     public function store(Request $request)
-{
-    /** @var User $user */
-    $user = auth()->user();
+    {
+        /** @var User $user */
+        $user = auth()->user();
 
-    if (!$user->canAddParking()) {
-        throw ValidationException::withMessages([
-            'limit' => 'You have reached the maximum number of parkings for your plan.',
+        if (!$user->canAddParking()) {
+            throw ValidationException::withMessages([
+                'limit' => 'You have reached the maximum number of parkings for your plan.',
+            ]);
+        }
+
+        // ✅ VALIDATION PRINCIPALE
+        $validated = $request->validate([
+            'name'              => ['required', 'string', 'max:255'],
+            'description'       => ['nullable', 'string', 'max:1000'],
+            'latitude'          => ['required', 'numeric', 'between:-90,90'],
+            'longitude'         => ['required', 'numeric', 'between:-180,180'],
+            'address_label'     => ['nullable', 'string', 'max:500'],
+            'total_spots'       => ['required', 'integer', 'min:1'],
+            'price_per_hour'    => ['required', 'numeric', 'min:0'],
+            'opening_time'      => ['nullable', 'date_format:H:i'],
+            'closing_time'      => ['nullable', 'date_format:H:i'],
+            'is_24h'            => ['nullable'],
+            'city'              => ['required', 'string', 'max:255'],
+            'cancel_time_limit' => ['required', 'integer', 'min:10', 'max:1000'],
+            'photo'             => ['required', 'image', 'max:4096'],
+            'annotation_file'   => ['nullable', 'image', 'max:10240'],
+            'slots'             => ['nullable', 'string'],
+            'cameras'           => ['nullable', 'string'],
         ]);
-    }
 
-    $validated = $request->validate([
-        'name'              => ['required', 'string', 'max:255'],
-        'description'       => ['nullable', 'string', 'max:1000'],
-        'latitude'          => ['required', 'numeric', 'between:-90,90'],
-        'longitude'         => ['required', 'numeric', 'between:-180,180'],
-        'address_label'     => ['nullable', 'string', 'max:500'],
-        'total_spots'       => ['required', 'integer', 'min:1'],
-        'price_per_hour'    => ['required', 'numeric', 'min:0'],
-        'opening_time'      => ['nullable', 'date_format:H:i'],
-        'closing_time'      => ['nullable', 'date_format:H:i'],
-        'is_24h'            => ['nullable'],
-        'city'              => ['required', 'string', 'max:255'],
-        'cancel_time_limit' => ['required', 'integer', 'min:10', 'max:1000'],
-        'photo'             => ['required', 'image', 'max:4096'],
-        'annotation_file'   => ['nullable', 'image', 'max:10240'],
-        'slots'             => ['nullable', 'string'],
-        'cameras'           => ['nullable', 'string'],
-    ]);
+        $isPremium = $user->isPremium();
+        $is24h     = in_array($request->input('is_24h'), ['1', 'true', true, 1], true);
 
-    $isPremium = $user->isPremium();
-    $is24h     = in_array($request->input('is_24h'), ['1', 'true', true, 1], true);
+        // Photo obligatoire
+        $photoPath = $request->file('photo')->store('parkings', 'public');
 
-    $photoPath = $request->file('photo')->store('parkings', 'public');
+        // ✅ GESTION DES SLOTS (Premium uniquement)
+        $parkingSlots   = null;
+        $annotatedCount = 0;
 
-    // ✅ Initialisation explicite pour éviter l'erreur de scope
-    $parkingSlots  = null;
-    $annotatedCount = 0;
+        if ($isPremium && !empty($validated['slots'])) {
+            $decoded = json_decode($validated['slots'], true);
+            
+            if (is_array($decoded) && count($decoded) > 0) {
+                $parkingSlots = collect($decoded)->map(function ($slot) {
+                    return [
+                        'id'     => $slot['id'] ?? uniqid(),
+                        'points' => collect($slot['points'] ?? [])->map(function ($point) {
+                            return [
+                                'x' => (float)($point['x'] ?? 0), 
+                                'y' => (float)($point['y'] ?? 0)
+                            ];
+                        })->toArray(),
+                    ];
+                })->filter(fn($s) => count($s['points']) >= 3)->values()->toArray();
 
-    if ($isPremium && !empty($validated['slots'])) {
-        $decoded = json_decode($validated['slots'], true);
-        
-        if (is_array($decoded) && count($decoded) > 0) {
-            $parkingSlots = collect($decoded)->map(function ($slot) {
-                return [
-                    'id'     => $slot['id'] ?? uniqid(),
-                    'points' => collect($slot['points'] ?? [])->map(function ($point) {
-                        return [
-                            'x' => (float)($point['x'] ?? 0), 
-                            'y' => (float)($point['y'] ?? 0)
-                        ];
-                    })->toArray(),
-                ];
-            })->filter(fn($s) => count($s['points']) >= 3)->values()->toArray();
+                $annotatedCount = count($parkingSlots);
+                $totalSpots     = (int)$validated['total_spots'];
 
-            $annotatedCount = count($parkingSlots);
-            $totalSpots     = (int)$validated['total_spots'];
-
-            if ($annotatedCount !== $totalSpots) {
-                throw ValidationException::withMessages([
-                    'slots' => "You annotated {$annotatedCount} spot(s), but declared {$totalSpots} total spots. They must match in Premium mode.",
-                ]);
+                // ✅ VALIDATION: Slots doivent correspondre au total déclaré
+                if ($annotatedCount !== $totalSpots) {
+                    throw ValidationException::withMessages([
+                        'slots' => "You annotated {$annotatedCount} spot(s), but declared {$totalSpots} total spots. They must match exactly.",
+                    ]);
+                }
             }
         }
-    }
 
-    // Annotation — Premium uniquement
-    $annotatedFilePath = null;
-    if ($isPremium && $request->hasFile('annotation_file')) {
-        $rawPath = $request->file('annotation_file')->store('parkings/raw', 'public');
-        if (!empty($parkingSlots)) {
-            $annotatedFilePath = $this->generateAnnotatedImage($rawPath, $parkingSlots);
+        // ✅ ANNOTATION FILE (Premium uniquement)
+        $annotatedFilePath = null;
+        if ($isPremium && $request->hasFile('annotation_file')) {
+            $rawPath = $request->file('annotation_file')->store('parkings/raw', 'public');
+            
+            if (!empty($parkingSlots)) {
+                $annotatedFilePath = $this->generateAnnotatedImage($rawPath, $parkingSlots);
+            }
+            
+            if (!$annotatedFilePath) {
+                $annotatedFilePath = $rawPath;
+            }
         }
-        if (!$annotatedFilePath) {
-            $annotatedFilePath = $rawPath;
-        }
-    }
 
-    $parking = $user->parkings()->create([
-        'name'                => $validated['name'],
-        'description'         => $validated['description'] ?? null,
-        'latitude'            => $validated['latitude'],
-        'longitude'           => $validated['longitude'],
-        'address_label'       => $validated['address_label'] ?? null,
-        'total_spots'         => (int)$validated['total_spots'],
-        'available_spots'     => (int)$validated['total_spots'],
-        'detected_cars'       => 0,
-        'price_per_hour'      => (float)$validated['price_per_hour'],
-        'opening_time'        => $validated['opening_time'] ?? null,
-        'closing_time'        => $validated['closing_time'] ?? null,
-        'is_24h'              => $is24h,
-        'photo_path'          => $photoPath,
-        'annotated_file_path' => $annotatedFilePath,
-        'parking_slots'       => $parkingSlots,
-        'status'              => 'active',
-        'city'                => $validated['city'],
-        'cancel_time_limit'   => (int)$validated['cancel_time_limit'],
-    ]);
+        // ✅ CRÉATION DU PARKING
+        $parking = $user->parkings()->create([
+            'name'                => $validated['name'],
+            'description'         => $validated['description'] ?? null,
+            'latitude'            => $validated['latitude'],
+            'longitude'           => $validated['longitude'],
+            'address_label'       => $validated['address_label'] ?? null,
+            'total_spots'         => (int)$validated['total_spots'],
+            'available_spots'     => (int)$validated['total_spots'],
+            'detected_cars'       => 0,
+            'price_per_hour'      => (float)$validated['price_per_hour'],
+            'opening_time'        => $validated['opening_time'] ?? null,
+            'closing_time'        => $validated['closing_time'] ?? null,
+            'is_24h'              => $is24h,
+            'photo_path'          => $photoPath,
+            'annotated_file_path' => $annotatedFilePath,
+            'parking_slots'       => $parkingSlots,
+            'status'              => 'active',
+            'city'                => $validated['city'],
+            'cancel_time_limit'   => (int)$validated['cancel_time_limit'],
+        ]);
 
-    // Caméras
-    if (!empty($validated['cameras'])) {
-        $cameras = json_decode($validated['cameras'], true);
-        if (is_array($cameras)) {
-            foreach ($cameras as $cam) {
-                if (empty($cam['name']) || empty($cam['stream_url'])) continue;
-                if (!in_array($cam['type'] ?? '', ['gate', 'zone'])) continue;
+        // ✅ VALIDATION ET CRÉATION DES CAMÉRAS
+        if (!empty($validated['cameras'])) {
+            $cameras = json_decode($validated['cameras'], true);
+            
+            if (is_array($cameras)) {
+                $errors = [];
                 
-                $parking->cameras()->create([
-                    'name'       => $cam['name'],
-                    'type'       => $cam['type'],
-                    'stream_url' => $cam['stream_url'],
-                    'gate_mode'  => $cam['type'] === 'gate'
-                        ? (in_array($cam['gate_mode'] ?? '', ['entrance', 'exit']) ? $cam['gate_mode'] : 'entrance')
-                        : null,
-                    'status'     => 'online',
-                ]);
+                foreach ($cameras as $index => $cam) {
+                    // Validation : nom ET URL obligatoires
+                    if (empty($cam['name']) || empty($cam['stream_url'])) {
+                        $errors["cameras.{$index}"] = "Camera #" . ($index + 1) . " requires both name and stream URL.";
+                        continue;
+                    }
+                    
+                    // Type valide requis
+                    if (!in_array($cam['type'] ?? '', ['gate', 'zone'])) {
+                        $errors["cameras.{$index}"] = "Camera #" . ($index + 1) . " has invalid type.";
+                        continue;
+                    }
+                    
+                    // Si type = gate, gate_mode obligatoire
+                    $gateModeValue = null;
+                    if ($cam['type'] === 'gate') {
+                        if (!in_array($cam['gate_mode'] ?? '', ['entrance', 'exit'])) {
+                            $errors["cameras.{$index}"] = "Camera #" . ($index + 1) . " (gate) requires gate_mode (entrance or exit).";
+                            continue;
+                        }
+                        $gateModeValue = $cam['gate_mode'];
+                    }
+                    
+                    // Création de la caméra
+                    $parking->cameras()->create([
+                        'name'       => trim($cam['name']),
+                        'type'       => $cam['type'],
+                        'stream_url' => trim($cam['stream_url']),
+                        'gate_mode'  => $gateModeValue,
+                        'status'     => 'online',
+                    ]);
+                }
+                
+                // Si des erreurs, annuler la transaction
+                if (!empty($errors)) {
+                    $parking->delete(); // Rollback manuel
+                    throw ValidationException::withMessages($errors);
+                }
             }
         }
+
+        logger()->info("✅ Parking créé : {$parking->name} (ID {$parking->id}) — {$annotatedCount} spots annotés, {$parking->cameras->count()} caméras");
+
+        return redirect()->route('parkings.index')
+            ->with('success', 'Parking "' . $parking->name . '" created successfully!');
     }
 
-    // ✅ Log sécurisé sans ?? dans la chaîne
-    logger()->info("✅ Parking créé : {$parking->name} (ID {$parking->id}) — {$annotatedCount} spots annotés");
-
-    return redirect()->route('parkings.index')
-        ->with('success', 'Parking "' . $parking->name . '" created successfully!');
-}
     // ══════════════════════════════════════════════════════════════════════════
     // GET /parkings/{parking}/edit
     // ══════════════════════════════════════════════════════════════════════════
 
     public function edit(Parking $parking)
     {
-        if ($parking->user_id !== auth()->id()) abort(403);
+        if ($parking->user_id !== auth()->id()) {
+            abort(403);
+        }
 
         /** @var User $user */
         $user = auth()->user();
@@ -212,9 +247,10 @@ class ParkingController extends Controller
         return Inertia::render('parking/edit', [
             'parking' => [
                 ...$parking->toArray(),
-                'photo_url'          => $parking->photo_url,
-                'annotated_file_url' => $parking->annotated_file_url,
-                'cameras'            => $parking->cameras->map(fn($c) => [
+                'photo_url'           => $parking->photo_url,
+                'annotation_image_url' => $parking->annotated_file_url, // ✅ Nom correct pour Edit.tsx
+                'slots'               => $parking->parking_slots, // ✅ Pré-remplir les slots existants
+                'cameras'             => $parking->cameras->map(fn($c) => [
                     'id'         => $c->id,
                     'name'       => $c->name,
                     'type'       => $c->type,
@@ -233,91 +269,142 @@ class ParkingController extends Controller
 
     public function update(Request $request, Parking $parking)
     {
-        if ($parking->user_id !== auth()->id()) abort(403);
+        if ($parking->user_id !== auth()->id()) {
+            abort(403);
+        }
 
         /** @var User $user */
         $user      = auth()->user();
         $isPremium = $user->isPremium();
 
+        // ✅ VALIDATION PRINCIPALE
         $validated = $request->validate([
-            'name'              => ['required', 'string', 'max:255'],
-            'description'       => ['nullable', 'string', 'max:1000'],
-            'latitude'          => ['required', 'numeric', 'between:-90,90'],
-            'longitude'         => ['required', 'numeric', 'between:-180,180'],
-            'address_label'     => ['nullable', 'string', 'max:500'],
-            'total_spots'       => ['required', 'integer', 'min:1'],
-            'price_per_hour'    => ['required', 'numeric', 'min:0'],
-            'opening_time'      => ['nullable', 'date_format:H:i'],
-            'closing_time'      => ['nullable', 'date_format:H:i'],
-            'is_24h'            => ['nullable'],
-            'city'              => ['required', 'string', 'max:255'],
-            'cancel_time_limit' => ['required', 'integer', 'min:10', 'max:1000'],
-            'photo'             => ['nullable', 'image', 'max:4096'],
-            'annotation_file'   => ['nullable', 'image', 'max:10240'],
-            'slots'             => ['nullable', 'string'],
-            'cameras'           => ['nullable', 'string'],
+            'name'               => ['required', 'string', 'max:255'],
+            'description'        => ['nullable', 'string', 'max:1000'],
+            'latitude'           => ['required', 'numeric', 'between:-90,90'],
+            'longitude'          => ['required', 'numeric', 'between:-180,180'],
+            'address_label'      => ['nullable', 'string', 'max:500'],
+            'total_spots'        => ['required', 'integer', 'min:1'],
+            'price_per_hour'     => ['required', 'numeric', 'min:0'],
+            'opening_time'       => ['nullable', 'date_format:H:i'],
+            'closing_time'       => ['nullable', 'date_format:H:i'],
+            'is_24h'             => ['nullable'],
+            'city'               => ['required', 'string', 'max:255'],
+            'cancel_time_limit'  => ['required', 'integer', 'min:10', 'max:1000'],
+            'photo'              => ['nullable', 'image', 'max:4096'],
+            'annotation_file'    => ['nullable', 'image', 'max:10240'],
+            'remove_annotation'  => ['nullable', 'boolean'], // ✅ Nouveau champ
+            'slots'              => ['nullable', 'string'],
+            'cameras'            => ['nullable', 'string'],
         ]);
 
         $is24h = in_array($request->input('is_24h'), ['1', 'true', true, 1], true);
 
-        // Photo
+        // ✅ GESTION PHOTO (optionnel en Edit)
         $photoPath = $parking->photo_path;
         if ($request->hasFile('photo')) {
-            if ($parking->photo_path) Storage::disk('public')->delete($parking->photo_path);
+            if ($parking->photo_path) {
+                Storage::disk('public')->delete($parking->photo_path);
+            }
             $photoPath = $request->file('photo')->store('parkings', 'public');
         }
 
-        // Slots — Premium
+        // ✅ GESTION SLOTS (Premium uniquement)
         $parkingSlots = $parking->parking_slots;
+        
         if ($isPremium && $request->has('slots')) {
             if (empty($validated['slots']) || $validated['slots'] === '[]') {
                 $parkingSlots = null;
             } else {
                 $decoded = json_decode($validated['slots'], true);
+                
                 if (is_array($decoded) && count($decoded) > 0) {
                     $parkingSlots = collect($decoded)->map(function ($slot) {
                         return [
                             'id'     => $slot['id'] ?? uniqid(),
                             'points' => collect($slot['points'] ?? [])->map(function ($point) {
-                                return ['x' => (float)($point['x'] ?? 0), 'y' => (float)($point['y'] ?? 0)];
+                                return [
+                                    'x' => (float)($point['x'] ?? 0), 
+                                    'y' => (float)($point['y'] ?? 0)
+                                ];
                             })->toArray(),
                         ];
                     })->filter(fn($s) => count($s['points']) >= 3)->values()->toArray();
+
+                    // ✅ VALIDATION: Vérifier correspondance avec total_spots
+                    $annotatedCount = count($parkingSlots);
+                    $totalSpots     = (int)$validated['total_spots'];
+
+                    // ⚠️ Validation UNIQUEMENT si un fichier d'annotation est présent ou existant
+                    $hasAnnotation = $request->hasFile('annotation_file') 
+                        || ($parking->annotated_file_path && !$request->boolean('remove_annotation'));
+
+                    if ($hasAnnotation && $annotatedCount !== $totalSpots) {
+                        throw ValidationException::withMessages([
+                            'slots' => "You annotated {$annotatedCount} spot(s), but declared {$totalSpots} total spots. They must match exactly.",
+                        ]);
+                    }
                 }
             }
         }
 
-        // Annotation — Premium
+        // ✅ GESTION ANNOTATION FILE (Premium uniquement)
         $annotatedFilePath = $parking->annotated_file_path;
-        if ($isPremium) {
-            $rawPath = null;
-            if ($request->hasFile('annotation_file')) {
-                $rawPath = $request->file('annotation_file')->store('parkings/raw', 'public');
-            }
-            $baseForAnnotation = $rawPath
-                ?? (($parking->annotated_file_path && str_contains($parking->annotated_file_path, 'parkings/raw'))
-                    ? $parking->annotated_file_path : null);
 
-            if (!empty($parkingSlots) && $baseForAnnotation) {
+        if ($isPremium) {
+            // Cas 1 : Supprimer l'annotation
+            if ($request->boolean('remove_annotation')) {
+                if ($parking->annotated_file_path) {
+                    Storage::disk('public')->delete($parking->annotated_file_path);
+                }
+                $annotatedFilePath = null;
+                $parkingSlots      = null;
+            } 
+            // Cas 2 : Nouveau fichier uploadé
+            elseif ($request->hasFile('annotation_file')) {
+                // Supprimer l'ancien fichier annoté
                 if ($parking->annotated_file_path && str_contains($parking->annotated_file_path, 'parkings/annotated')) {
                     Storage::disk('public')->delete($parking->annotated_file_path);
                 }
-                $newAnnotated = $this->generateAnnotatedImage($baseForAnnotation, $parkingSlots);
-                if ($newAnnotated) $annotatedFilePath = $newAnnotated;
-            } elseif ($rawPath) {
-                if ($parking->annotated_file_path && str_contains($parking->annotated_file_path, 'parkings/annotated')) {
-                    Storage::disk('public')->delete($parking->annotated_file_path);
+
+                // Sauvegarder le nouveau fichier brut
+                $rawPath = $request->file('annotation_file')->store('parkings/raw', 'public');
+
+                // Générer l'image annotée si des slots existent
+                if (!empty($parkingSlots)) {
+                    $newAnnotated = $this->generateAnnotatedImage($rawPath, $parkingSlots);
+                    $annotatedFilePath = $newAnnotated ?: $rawPath;
+                } else {
+                    $annotatedFilePath = $rawPath;
                 }
-                $annotatedFilePath = $rawPath;
-            } elseif (empty($parkingSlots)) {
-                if ($parking->annotated_file_path && str_contains($parking->annotated_file_path, 'parkings/annotated')) {
+            }
+            // Cas 3 : Mise à jour des slots sur fichier existant
+            elseif (!empty($parkingSlots) && $parking->annotated_file_path) {
+                $baseForAnnotation = str_contains($parking->annotated_file_path, 'parkings/raw')
+                    ? $parking->annotated_file_path
+                    : null;
+
+                if ($baseForAnnotation) {
+                    if (str_contains($parking->annotated_file_path, 'parkings/annotated')) {
+                        Storage::disk('public')->delete($parking->annotated_file_path);
+                    }
+                    
+                    $newAnnotated = $this->generateAnnotatedImage($baseForAnnotation, $parkingSlots);
+                    if ($newAnnotated) {
+                        $annotatedFilePath = $newAnnotated;
+                    }
+                }
+            }
+            // Cas 4 : Slots vidés, supprimer l'annotation générée
+            elseif (empty($parkingSlots) && $parking->annotated_file_path) {
+                if (str_contains($parking->annotated_file_path, 'parkings/annotated')) {
                     Storage::disk('public')->delete($parking->annotated_file_path);
                     $annotatedFilePath = null;
                 }
             }
         }
 
-        // Mise à jour parking
+        // ✅ MISE À JOUR DU PARKING
         $spotsDiff    = (int)$validated['total_spots'] - $parking->total_spots;
         $newAvailable = max(0, $parking->available_spots + $spotsDiff);
 
@@ -340,47 +427,76 @@ class ParkingController extends Controller
             'cancel_time_limit'   => (int)$validated['cancel_time_limit'],
         ]);
 
-        // Caméras
+        // ✅ VALIDATION ET MISE À JOUR DES CAMÉRAS
         if (!empty($validated['cameras'])) {
             $cameras         = json_decode($validated['cameras'], true);
             $cameraIdsToKeep = [];
+            $errors          = [];
 
             if (is_array($cameras)) {
-                foreach ($cameras as $cam) {
-                    if (empty($cam['name']) || empty($cam['stream_url'])) continue;
-                    if (!in_array($cam['type'] ?? '', ['gate', 'zone'])) continue;
+                foreach ($cameras as $index => $cam) {
+                    // Validation : nom ET URL obligatoires
+                    if (empty($cam['name']) || empty($cam['stream_url'])) {
+                        $errors["cameras.{$index}"] = "Camera #" . ($index + 1) . " requires both name and stream URL.";
+                        continue;
+                    }
 
-                    $gateModeValue = $cam['type'] === 'gate'
-                        ? (in_array($cam['gate_mode'] ?? '', ['entrance', 'exit']) ? $cam['gate_mode'] : 'entrance')
-                        : null;
+                    // Type valide requis
+                    if (!in_array($cam['type'] ?? '', ['gate', 'zone'])) {
+                        $errors["cameras.{$index}"] = "Camera #" . ($index + 1) . " has invalid type.";
+                        continue;
+                    }
 
+                    // Si type = gate, gate_mode obligatoire
+                    $gateModeValue = null;
+                    if ($cam['type'] === 'gate') {
+                        if (!in_array($cam['gate_mode'] ?? '', ['entrance', 'exit'])) {
+                            $errors["cameras.{$index}"] = "Camera #" . ($index + 1) . " (gate) requires gate_mode (entrance or exit).";
+                            continue;
+                        }
+                        $gateModeValue = $cam['gate_mode'];
+                    }
+
+                    // Mise à jour ou création
                     if (!empty($cam['id'])) {
                         $camera = $parking->cameras()->find($cam['id']);
                         if ($camera) {
                             $camera->update([
-                                'name'       => $cam['name'],
+                                'name'       => trim($cam['name']),
                                 'type'       => $cam['type'],
-                                'stream_url' => $cam['stream_url'],
+                                'stream_url' => trim($cam['stream_url']),
                                 'gate_mode'  => $gateModeValue,
                             ]);
                             $cameraIdsToKeep[] = $camera->id;
                         }
                     } else {
                         $newCamera = $parking->cameras()->create([
-                            'name'       => $cam['name'],
+                            'name'       => trim($cam['name']),
                             'type'       => $cam['type'],
-                            'stream_url' => $cam['stream_url'],
+                            'stream_url' => trim($cam['stream_url']),
                             'gate_mode'  => $gateModeValue,
                             'status'     => 'online',
                         ]);
                         $cameraIdsToKeep[] = $newCamera->id;
                     }
                 }
+
+                // Supprimer les caméras retirées
+                $parking->cameras()->whereNotIn('id', $cameraIdsToKeep)->delete();
+
+                // Si des erreurs, les retourner
+                if (!empty($errors)) {
+                    throw ValidationException::withMessages($errors);
+                }
             }
-            $parking->cameras()->whereNotIn('id', $cameraIdsToKeep)->delete();
         } else {
+            // Si cameras = null ou [], supprimer toutes les caméras
             $parking->cameras()->delete();
         }
+
+        logger()->info("✅ Parking mis à jour : {$parking->name} (ID {$parking->id}) — " . 
+            count($parking->parking_slots ?? []) . " slots, " . 
+            $parking->cameras->count() . " caméras");
 
         return redirect()->route('parkings.index')
             ->with('success', 'Parking "' . $parking->name . '" updated successfully!');

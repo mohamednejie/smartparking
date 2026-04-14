@@ -8,27 +8,50 @@ import InputError from '@/components/input-error';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from 'sonner';
 import {
-    MapPin, CheckCircle, AlertTriangle, Navigation,
-    Camera as CameraIcon, Plus, Trash2, MousePointer,
-    RotateCcw, Eye, Layers, Image as ImageIcon,
-    ScanLine, Info, Check, Crown, Lock,
+    MapPin, Navigation, Camera as CameraIcon, Plus, Trash2,
+    MousePointer, RotateCcw, Eye, Layers, ScanLine,
+    Info, Check, Crown, Lock, Image as ImageIcon,
+    AlertTriangle, AlertCircle,
     ChevronRight, ChevronLeft, Building2, DollarSign, Clock, Map,
-    AlertCircle,
 } from 'lucide-react';
 import AppLayout from '@/layouts/app-layout';
 import MapPicker from '@/components/map-picker';
 
 // ── TYPES ─────────────────────────────────────────────────────────────────────
-type Point      = { x: number; y: number };
-type Slot       = { id: number; points: Point[] };
-type GateMode   = 'entrance' | 'exit';
+type Point    = { x: number; y: number };
+type Slot     = { id: number; points: Point[] };
+type GateMode = 'entrance' | 'exit';
+
 type CameraForm = {
+    id?: number
     name: string
     type: 'gate' | 'zone'
     stream_url: string
     gate_mode?: GateMode
 };
-type Props = { isPremium: boolean };
+
+type Props = {
+    isPremium: boolean;
+    parking: {
+        id: number;
+        name: string;
+        description: string | null;
+        latitude: number;
+        longitude: number;
+        address_label: string | null;
+        total_spots: number;
+        price_per_hour: number;
+        opening_time: string | null;
+        closing_time: string | null;
+        is_24h: boolean;
+        photo_url: string | null;
+        annotation_image_url: string | null;
+        slots?: Slot[];
+        city: string;
+        cancel_time_limit: number | null;
+        cameras?: CameraForm[];
+    };
+};
 
 // ── COULEURS ──────────────────────────────────────────────────────────────────
 const SLOT_COLORS = [
@@ -260,30 +283,53 @@ const STEPS = [
 ];
 
 // ── PAGE PRINCIPALE ───────────────────────────────────────────────────────────
-export default function CreateParking({ isPremium }: Props) {
-    const { flash, errors: pageErrors } = usePage().props as any;
+export default function EditParking({ parking, isPremium }: Props) {
+    const { errors: pageErrors } = usePage().props as any;
+    const serverErrors: Record<string,string> = pageErrors || {};
 
     const [currentStep, setCurrentStep] = useState(1);
 
     const [fields, setFields] = useState({
-        name: '', description: '', latitude: '', longitude: '',
-        address_label: '', total_spots: '', price_per_hour: '',
-        opening_time: '', closing_time: '', is_24h: false,
-        city: '', cancel_time_limit: '30',
+        name:              parking.name,
+        description:       parking.description || '',
+        latitude:          String(parking.latitude),
+        longitude:         String(parking.longitude),
+        address_label:     parking.address_label || '',
+        total_spots:       String(parking.total_spots),
+        price_per_hour:    String(parking.price_per_hour),
+        opening_time:      parking.opening_time || '',
+        closing_time:      parking.closing_time || '',
+        is_24h:            parking.is_24h,
+        city:              parking.city || '',
+        cancel_time_limit: String(parking.cancel_time_limit || 30),
     });
 
-    const [photo,           setPhoto]           = useState<File | null>(null);
-    const [annotationFile,  setAnnotationFile]  = useState<File | null>(null);
-    const [slots,           setSlots]           = useState<Slot[]>([]);
-    const [cameras,         setCameras]         = useState<CameraForm[]>([]);
-    const [photoPreview,    setPhotoPreview]    = useState<string | null>(null);
-    const [annotPreview,    setAnnotPreview]    = useState<string | null>(null);
-    const [clientErrors,    setClientErrors]    = useState<Record<string,string>>({});
-    const [isLocating,      setIsLocating]      = useState(false);
-    const [processing,      setProcessing]      = useState(false);
+    const [photo,            setPhoto]            = useState<File | null>(null);
+    const [annotationFile,   setAnnotationFile]   = useState<File | null>(null);
+    const [slots,            setSlots]            = useState<Slot[]>(parking.slots || []);
+    const [cameras,          setCameras]          = useState<CameraForm[]>(parking.cameras || []);
+    const [photoPreview,     setPhotoPreview]     = useState<string | null>(null);
+    const [annotPreview,     setAnnotPreview]     = useState<string | null>(parking.annotation_image_url || null);
+    const [removeAnnotation, setRemoveAnnotation] = useState(false);
 
-    const serverErrors: Record<string,string> = pageErrors || {};
-    const getError = (field: string) => clientErrors[field] || serverErrors[field];
+    // clientErrors : erreurs de fichier (taille/format) et de champs texte pendant la frappe
+    const [clientErrors,     setClientErrors]     = useState<Record<string,string>>({});
+    // submitErrors : erreurs calculées UNIQUEMENT au moment du submit
+    const [submitErrors,     setSubmitErrors]     = useState<Record<string,string>>({});
+    // submitted : true seulement après la première tentative de soumission
+    const [submitted,        setSubmitted]        = useState(false);
+    const [isLocating,       setIsLocating]       = useState(false);
+    const [processing,       setProcessing]       = useState(false);
+
+    // Retourne l'erreur à afficher pour un champ donné
+    const getError = (field: string): string | undefined => {
+        const fileOnlyFields = ['photo', 'annotation_file'];
+        if (!submitted) {
+            if (fileOnlyFields.includes(field)) return clientErrors[field] || serverErrors[field];
+            return serverErrors[field];
+        }
+        return submitErrors[field] || clientErrors[field] || serverErrors[field];
+    };
 
     const validateField = (field: string, value: string) => {
         const rules: Record<string,()=>string> = {
@@ -296,7 +342,11 @@ export default function CreateParking({ isPremium }: Props) {
             price_per_hour:    () => (!value||+value<0) ? 'Cannot be negative.' : '',
         };
         const error = rules[field]?.() ?? '';
-        setClientErrors(prev => { const c={...prev}; error ? c[field]=error : delete c[field]; return c; });
+        setClientErrors(prev => {
+            const c = {...prev};
+            error ? c[field] = error : delete c[field];
+            return c;
+        });
     };
 
     const setField = (key: string, value: string | boolean) => {
@@ -304,19 +354,15 @@ export default function CreateParking({ isPremium }: Props) {
         if (typeof value === 'string') validateField(key, value);
     };
 
-    const addCamera = () => setCameras(prev => [...prev, { name: '', type: 'zone', stream_url: '', gate_mode: 'entrance' }]);
+    const addCamera    = () => setCameras(prev => [...prev, { name: '', type: 'zone', stream_url: '', gate_mode: 'entrance' }]);
     const removeCamera = (i: number) => setCameras(prev => prev.filter((_,idx) => idx !== i));
 
     const updateCamera = (i: number, field: keyof CameraForm, value: string) =>
         setCameras(prev => prev.map((c, idx) => {
             if (idx !== i) return c;
             const updated = { ...c, [field]: value };
-            if (field === 'type' && value === 'gate' && !updated.gate_mode) {
-                updated.gate_mode = 'entrance';
-            }
-            if (field === 'type' && value === 'zone') {
-                updated.gate_mode = undefined;
-            }
+            if (field === 'type' && value === 'gate' && !updated.gate_mode) updated.gate_mode = 'entrance';
+            if (field === 'type' && value === 'zone') updated.gate_mode = undefined;
             return updated;
         }));
 
@@ -342,10 +388,11 @@ export default function CreateParking({ isPremium }: Props) {
     const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file=e.target.files?.[0]||null;
         setPhoto(file);
-        if (!file) { setPhotoPreview(null); return; }
-        if (file.size>4096*1024) { setClientErrors(p=>({...p,photo:'Max 4MB.'})); return; }
-        if (!file.type.startsWith('image/')) { setClientErrors(p=>({...p,photo:'Must be an image.'})); return; }
         setClientErrors(p=>{const c={...p};delete c.photo;return c;});
+        setSubmitErrors(p=>{const c={...p};delete c.photo;return c;});
+        if (!file) { setPhotoPreview(null); return; }
+        if (file.size>4096*1024) { setClientErrors(p=>({...p,photo:'Max 4MB.'})); setPhotoPreview(null); return; }
+        if (!file.type.startsWith('image/')) { setClientErrors(p=>({...p,photo:'Must be an image.'})); setPhotoPreview(null); return; }
         const reader=new FileReader();
         reader.onload=ev=>setPhotoPreview(ev.target?.result as string);
         reader.readAsDataURL(file);
@@ -356,149 +403,102 @@ export default function CreateParking({ isPremium }: Props) {
         setAnnotationFile(file);
         setAnnotPreview(null);
         setSlots([]);
-        
-        if (!file) {
-            setClientErrors(p => {
-                const c = { ...p };
-                delete c.annotation_file;
-                delete c.slots;
-                return c;
-            });
-            return;
-        }
-        
-        if (file.size > 10 * 1024 * 1024) {
-            setClientErrors(p => ({ ...p, annotation_file: 'Max 10MB.' }));
-            return;
-        }
-        
-        if (!file.type.startsWith('image/')) {
-            setClientErrors(p => ({ ...p, annotation_file: 'Must be an image.' }));
-            return;
-        }
-        
-        setClientErrors(p => {
-            const c = { ...p };
-            delete c.annotation_file;
-            delete c.slots;
-            return c;
-        });
-        
+        setRemoveAnnotation(false);
+        setClientErrors(p => { const c = { ...p }; delete c.annotation_file; delete c.slots; return c; });
+        setSubmitErrors(p => { const c = { ...p }; delete c.annotation_file; delete c.slots; return c; });
+        if (!file) return;
+        if (file.size > 10 * 1024 * 1024) { setClientErrors(p => ({ ...p, annotation_file: 'Max 10MB.' })); return; }
+        if (!file.type.startsWith('image/')) { setClientErrors(p => ({ ...p, annotation_file: 'Must be an image.' })); return; }
         const reader = new FileReader();
-        reader.onload = ev => {
-            setAnnotPreview(ev.target?.result as string);
-        };
+        reader.onload = ev => setAnnotPreview(ev.target?.result as string);
         reader.readAsDataURL(file);
     };
 
     const canGoNext = () => {
-        if (currentStep === 1) {
-            return fields.name.trim() && fields.city.trim();
-        }
-        if (currentStep === 2) {
-            return fields.latitude && fields.longitude && !getError('latitude') && !getError('longitude');
-        }
-        if (currentStep === 3) {
-            return fields.total_spots && fields.price_per_hour && fields.cancel_time_limit && 
-                   !getError('total_spots') && !getError('price_per_hour') && !getError('cancel_time_limit');
-        }
+        if (currentStep === 1) return fields.name.trim() !== '' && fields.city.trim() !== '';
+        if (currentStep === 2) return fields.latitude !== '' && fields.longitude !== ''
+            && !clientErrors.latitude && !clientErrors.longitude;
+        if (currentStep === 3) return fields.total_spots !== '' && fields.price_per_hour !== ''
+            && fields.cancel_time_limit !== ''
+            && !clientErrors.total_spots && !clientErrors.price_per_hour && !clientErrors.cancel_time_limit;
         return true;
     };
 
     const nextStep = () => {
-        if (!canGoNext()) {
-            toast.error('Please fill all required fields correctly');
-            return;
-        }
+        if (!canGoNext()) { toast.error('Please fill all required fields correctly'); return; }
         if (currentStep < STEPS.length) setCurrentStep(c => c + 1);
     };
-
     const prevStep = () => { if (currentStep > 1) setCurrentStep(c => c - 1); };
 
-    // ✅ FONCTION DE VALIDATION DIRECTE (sans dépendance au state)
+    // validateForm : validation COMPLÈTE appelée uniquement au submit
     const validateForm = useCallback((): Record<string, string> => {
         const errors: Record<string, string> = {};
-        
-        // Validation basique
+
         if (!fields.name.trim()) errors.name = 'Name is required.';
         if (!fields.city.trim()) errors.city = 'City is required.';
-        
+
         const lat = parseFloat(fields.latitude);
         const lng = parseFloat(fields.longitude);
-        if (!fields.latitude || isNaN(lat) || lat < -90 || lat > 90) 
-            errors.latitude = 'Between -90 and 90.';
-        if (!fields.longitude || isNaN(lng) || lng < -180 || lng > 180) 
-            errors.longitude = 'Between -180 and 180.';
-        
-        const totalSpots = parseInt(fields.total_spots);
+        if (!fields.latitude || isNaN(lat) || lat < -90 || lat > 90)    errors.latitude  = 'Between -90 and 90.';
+        if (!fields.longitude || isNaN(lng) || lng < -180 || lng > 180) errors.longitude = 'Between -180 and 180.';
+
+        const totalSpots   = parseInt(fields.total_spots);
         const pricePerHour = parseFloat(fields.price_per_hour);
-        const cancelLimit = parseInt(fields.cancel_time_limit);
-        
-        if (!fields.total_spots || isNaN(totalSpots) || totalSpots < 1) 
-            errors.total_spots = 'At least 1 spot.';
-        if (!fields.price_per_hour || isNaN(pricePerHour) || pricePerHour < 0) 
-            errors.price_per_hour = 'Cannot be negative.';
-        if (!fields.cancel_time_limit || isNaN(cancelLimit) || cancelLimit < 10 || cancelLimit > 1000) 
-            errors.cancel_time_limit = 'Between 10 and 1000 min.';
-        
-        // Validation photo
-        if (!photo) {
-            errors.photo = 'Photo is required.';
+        const cancelLimit  = parseInt(fields.cancel_time_limit);
+
+        if (!fields.total_spots    || isNaN(totalSpots)   || totalSpots < 1)                  errors.total_spots       = 'At least 1 spot.';
+        if (!fields.price_per_hour || isNaN(pricePerHour) || pricePerHour < 0)                errors.price_per_hour    = 'Cannot be negative.';
+        if (!fields.cancel_time_limit || isNaN(cancelLimit) || cancelLimit<10 || cancelLimit>1000) errors.cancel_time_limit = 'Between 10 and 1000 min.';
+
+        // Caméras obligatoires
+        if (cameras.length === 0) {
+            errors.cameras = 'At least one camera is required.';
+        } else {
+            cameras.forEach((cam, idx) => {
+                if (!cam.name.trim())       errors[`camera_${idx}_name`]       = `Camera ${idx+1}: name required.`;
+                if (!cam.stream_url.trim()) errors[`camera_${idx}_stream_url`] = `Camera ${idx+1}: stream URL required.`;
+                if (cam.type === 'gate' && !cam.gate_mode) errors[`camera_${idx}_gate_mode`] = `Camera ${idx+1}: select entrance or exit.`;
+            });
         }
-        
-        // ✅ VALIDATION MATCHING SLOTS - Directe, sans dépendance d'état
-        if (isPremium && annotationFile && annotPreview && totalSpots > 0) {
-            const currentSlots = slots.length;
-            if (currentSlots !== totalSpots) {
-                errors.slots = `You annotated ${currentSlots} spot(s), but declared ${totalSpots}. They must match.`;
+
+        // Annotation (si présente et non supprimée)
+        const hasAnnotation = !removeAnnotation && (
+            annotationFile !== null || parking.annotation_image_url !== null
+        );
+        if (isPremium && hasAnnotation && !isNaN(totalSpots) && totalSpots > 0) {
+            if (slots.length === 0) {
+                errors.slots = 'Annotation file present but no spots drawn. Annotate all spots or remove the annotation.';
+            } else if (slots.length !== totalSpots) {
+                errors.slots = `You annotated ${slots.length} spot(s) but declared ${totalSpots}. They must match exactly.`;
             }
         }
-        
-        return errors;
-    }, [fields, photo, isPremium, annotationFile, annotPreview, slots]);
 
-    // ✅ HANDLE SUBMIT - Validation directe
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        // ✅ Appel de validation qui retourne un objet frais
+        return errors;
+    }, [fields, cameras, isPremium, annotationFile, parking, removeAnnotation, slots]);
+
+    // handleSubmit : SEUL point d'entrée pour soumettre le formulaire
+    const handleSubmit = () => {
+        setSubmitted(true);
         const errors = validateForm();
-        
-        // Log pour debug
-        console.log('🔍 Validation Errors:', errors);
-        console.log('📊 Slots Annotated:', slots.length, '| Total Declared:', fields.total_spots);
-        
-        // Mettre à jour l'état pour l'affichage (optionnel, juste pour UI)
-        setClientErrors(errors);
-        
-        // ✅ Vérification IMMEDIATE - pas de dépendance au state
+        setSubmitErrors(errors);
+
         if (Object.keys(errors).length > 0) {
-            const errorCount = Object.keys(errors).length;
-            const errorFields = Object.keys(errors).join(', ');
-            
-            toast.error(`Please fix ${errorCount} error(s) before submitting`, {
-                description: `Fields with errors: ${errorFields}`,
-                duration: 5000,
-            });
-            
-            // Redirection vers l'étape concernée
-            if (errors.slots || errors.annotation_file || errors.photo) {
-                setCurrentStep(4);
-            } else if (errors.total_spots || errors.price_per_hour || errors.cancel_time_limit) {
-                setCurrentStep(3);
+            toast.error(`Please fix ${Object.keys(errors).length} error(s) before submitting`, { duration: 5000 });
+            // Rediriger vers la première étape avec une erreur
+            if (errors.name || errors.city) {
+                setCurrentStep(1);
             } else if (errors.latitude || errors.longitude) {
                 setCurrentStep(2);
+            } else if (errors.total_spots || errors.price_per_hour || errors.cancel_time_limit) {
+                setCurrentStep(3);
             } else {
-                setCurrentStep(1);
+                setCurrentStep(4);
             }
-            
-            return; // ✅ STOP ICI - Ne pas soumettre
+            return;
         }
-        
-        // ✅ Si on arrive ici, AUCUNE ERREUR - Soumission
-        console.log('✅ All validations passed - Submitting form...');
-        
+
         const formData = new FormData();
+        formData.append('_method',           'PUT');
         formData.append('name',              fields.name);
         formData.append('description',       fields.description);
         formData.append('latitude',          fields.latitude);
@@ -511,118 +511,111 @@ export default function CreateParking({ isPremium }: Props) {
         formData.append('is_24h',            fields.is_24h ? '1' : '0');
         formData.append('city',              fields.city);
         formData.append('cancel_time_limit', fields.cancel_time_limit);
-        formData.append('photo',             photo);
-        
-        if (isPremium && annotationFile && slots.length > 0) {
-            formData.append('annotation_file', annotationFile);
-            formData.append('slots', JSON.stringify(slots));
+
+        if (photo) formData.append('photo', photo);
+
+        if (isPremium) {
+            if (removeAnnotation) {
+                formData.append('remove_annotation', '1');
+                formData.append('slots', '[]');
+            } else if (annotationFile) {
+                formData.append('annotation_file', annotationFile);
+                formData.append('slots', JSON.stringify(slots));
+            } else if (parking.annotation_image_url) {
+                formData.append('slots', JSON.stringify(slots));
+            } else {
+                formData.append('slots', '[]');
+            }
         } else {
             formData.append('slots', '[]');
         }
-        
+
         formData.append('cameras', JSON.stringify(cameras));
 
         setProcessing(true);
-        
-        router.post('/parkings', formData, {
+        router.post(`/parkings/${parking.id}`, formData, {
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => {
-                toast.success('🎉 Parking created successfully!', {
-                    description: `${fields.name} has been added to your parkings`,
+                toast.success('Parking updated successfully!', {
+                    description: `${fields.name} has been updated`,
                     duration: 5000,
                 });
             },
-            onError: (errors) => {
-                console.error('❌ Server Errors:', errors);
-                const firstError = Object.values(errors)[0] as string;
-                toast.error('Failed to create parking', {
-                    description: firstError,
-                    duration: 6000,
-                });
-                
-                if (errors.slots) setCurrentStep(4);
-                if (errors.total_spots || errors.price_per_hour) setCurrentStep(3);
-                if (errors.latitude || errors.longitude) setCurrentStep(2);
-                if (errors.name || errors.city) setCurrentStep(1);
+            onError: (errs) => {
+                const firstError = Object.values(errs)[0] as string;
+                toast.error('Failed to update parking', { description: firstError, duration: 6000 });
+                if (errs.slots || errs.cameras) setCurrentStep(4);
+                else if (errs.total_spots || errs.price_per_hour) setCurrentStep(3);
+                else if (errs.latitude || errs.longitude) setCurrentStep(2);
+                else setCurrentStep(1);
             },
             onFinish: () => setProcessing(false),
         });
     };
 
+    const stepHasError = (stepId: number): boolean => {
+        if (!submitted) return false;
+        const allErrors = { ...submitErrors, ...serverErrors };
+        const stepFields: Record<number, string[]> = {
+            1: ['name', 'city', 'description'],
+            2: ['latitude', 'longitude', 'address_label'],
+            3: ['total_spots', 'price_per_hour', 'cancel_time_limit', 'opening_time', 'closing_time'],
+            4: ['photo', 'annotation_file', 'slots', 'cameras',
+                ...Object.keys(allErrors).filter(k => k.startsWith('camera_'))],
+        };
+        return (stepFields[stepId] || []).some(f => !!allErrors[f]);
+    };
+
     return (
         <AppLayout breadcrumbs={[
             {title:'My Parkings', href:'/parkings'},
-            {title:'Add',         href:'/parkings/create'},
+            {title:'Edit',        href:`/parkings/${parking.id}/edit`},
         ]}>
-            <Head title="Add Parking"/>
+            <Head title={`Edit — ${parking.name}`}/>
             <div className="mx-auto max-w-3xl py-8 px-4">
 
-                {/* Header */}
                 <div className="flex items-center justify-between mb-8">
-                    <h1 className="text-2xl font-bold">Add a Parking</h1>
+                    <h1 className="text-2xl font-bold">Edit Parking</h1>
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${isPremium?'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300':'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
                         {isPremium && <Crown className="h-3 w-3"/>}
                         {isPremium ? 'Premium Plan' : 'Basic Plan'}
                     </span>
                 </div>
 
-                {/* Flash Messages */}
-                {flash?.success && (
-                    <div className="mb-6 flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300">
-                        <CheckCircle className="h-5 w-5 shrink-0"/><p>{flash.success}</p>
-                    </div>
-                )}
-                {flash?.warning && (
-                    <div className="mb-6 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-300">
-                        <AlertTriangle className="h-5 w-5 shrink-0"/><p>{flash.warning}</p>
-                    </div>
-                )}
-                {serverErrors?.limit && (
-                    <div className="mb-6 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300">
-                        <AlertTriangle className="h-5 w-5 shrink-0"/><p>{serverErrors.limit}</p>
-                    </div>
-                )}
-
-                {/* ✅ Progress Steps */}
+                {/* Progress Steps */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between relative">
                         <div className="absolute top-5 left-0 right-0 h-1 bg-muted -z-10">
                             <div className="h-full bg-primary transition-all duration-300"
                                 style={{width: `${((currentStep - 1) / (STEPS.length - 1)) * 100}%`}}/>
                         </div>
-                        
                         {STEPS.map((step) => {
                             const Icon = step.icon;
-                            const isActive = currentStep === step.id;
+                            const isActive    = currentStep === step.id;
                             const isCompleted = currentStep > step.id;
-                            
+                            const hasErr      = stepHasError(step.id);
                             return (
                                 <div key={step.id} className="flex flex-col items-center gap-2 bg-background px-2">
-                                    <button
-                                        type="button"
+                                    <button type="button"
                                         onClick={() => step.id < currentStep && setCurrentStep(step.id)}
                                         disabled={step.id > currentStep}
                                         className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all ${
-                                            isActive
+                                            hasErr
+                                                ? 'border-red-500 bg-red-50 text-red-600'
+                                                : isActive
                                                 ? 'border-primary bg-primary text-primary-foreground shadow-lg scale-110'
                                                 : isCompleted
                                                 ? 'border-primary bg-primary text-primary-foreground'
                                                 : 'border-muted-foreground/30 bg-muted text-muted-foreground'
                                         } ${step.id < currentStep ? 'cursor-pointer hover:scale-105' : ''}`}>
-                                        {isCompleted && !isActive ? (
-                                            <Check className="h-5 w-5"/>
-                                        ) : (
-                                            <Icon className="h-5 w-5"/>
-                                        )}
+                                        {hasErr ? <AlertCircle className="h-5 w-5"/> : isCompleted && !isActive ? <Check className="h-5 w-5"/> : <Icon className="h-5 w-5"/>}
                                     </button>
                                     <div className="text-center">
-                                        <p className={`text-xs font-semibold ${isActive ? 'text-primary' : isCompleted ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                        <p className={`text-xs font-semibold ${hasErr ? 'text-red-500' : isActive ? 'text-primary' : isCompleted ? 'text-foreground' : 'text-muted-foreground'}`}>
                                             {step.title}
                                         </p>
-                                        <p className="text-[10px] text-muted-foreground hidden sm:block max-w-[80px]">
-                                            {step.desc}
-                                        </p>
+                                        <p className="text-[10px] text-muted-foreground hidden sm:block max-w-[80px]">{step.desc}</p>
                                     </div>
                                 </div>
                             );
@@ -630,17 +623,20 @@ export default function CreateParking({ isPremium }: Props) {
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-6">
+                {/*
+                    IMPORTANT : pas de <form> — on utilise un <div>.
+                    Le submit est déclenché UNIQUEMENT par le bouton "Update Parking"
+                    via onClick={handleSubmit}. Aucun submit natif HTML possible.
+                */}
+                <div className="space-y-6">
 
-                    {/* ✅ STEP 1: Basic Info */}
+                    {/* ── STEP 1 ───────────────────────────────────────────── */}
                     {currentStep === 1 && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-6">
                                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                                    <Building2 className="h-5 w-5 text-primary"/>
-                                    Basic Information
+                                    <Building2 className="h-5 w-5 text-primary"/> Basic Information
                                 </h2>
-
                                 <div className="space-y-4">
                                     <div className="grid gap-2">
                                         <Label htmlFor="name">Parking Name *</Label>
@@ -651,7 +647,6 @@ export default function CreateParking({ isPremium }: Props) {
                                             className={getError('name')?'border-red-500':''}/>
                                         <InputError message={getError('name')}/>
                                     </div>
-
                                     <div className="grid gap-2">
                                         <Label htmlFor="city">City *</Label>
                                         <Input id="city" value={fields.city}
@@ -661,7 +656,6 @@ export default function CreateParking({ isPremium }: Props) {
                                             className={getError('city')?'border-red-500':''}/>
                                         <InputError message={getError('city')}/>
                                     </div>
-
                                     <div className="grid gap-2">
                                         <Label htmlFor="description">Description (Optional)</Label>
                                         <textarea id="description" value={fields.description}
@@ -675,29 +669,24 @@ export default function CreateParking({ isPremium }: Props) {
                         </div>
                     )}
 
-                    {/* ✅ STEP 2: Location */}
+                    {/* ── STEP 2 ───────────────────────────────────────────── */}
                     {currentStep === 2 && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-6">
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-lg font-semibold flex items-center gap-2">
-                                        <Map className="h-5 w-5 text-primary"/>
-                                        Location
+                                        <Map className="h-5 w-5 text-primary"/> Location
                                     </h2>
                                     <Button type="button" variant="outline" size="sm"
                                         onClick={getCurrentLocation} disabled={isLocating}>
-                                        {isLocating
-                                            ? <><Spinner className="mr-2 h-4 w-4"/> Locating...</>
-                                            : <><Navigation className="mr-1 h-4 w-4"/> Use GPS</>}
+                                        {isLocating ? <><Spinner className="mr-2 h-4 w-4"/> Locating...</> : <><Navigation className="mr-1 h-4 w-4"/> Use GPS</>}
                                     </Button>
                                 </div>
-
                                 <MapPicker
                                     latitude={fields.latitude ? parseFloat(fields.latitude) : null}
                                     longitude={fields.longitude ? parseFloat(fields.longitude) : null}
                                     onLocationSelect={handleLocationSelect}
                                     height="400px"/>
-
                                 <div className="grid md:grid-cols-2 gap-4 mt-4">
                                     <div className="grid gap-2">
                                         <Label>Latitude *</Label>
@@ -718,7 +707,6 @@ export default function CreateParking({ isPremium }: Props) {
                                         <InputError message={getError('longitude')}/>
                                     </div>
                                 </div>
-
                                 {fields.address_label && (
                                     <div className="flex items-start gap-2 rounded-lg bg-muted p-3 mt-4">
                                         <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground"/>
@@ -729,15 +717,13 @@ export default function CreateParking({ isPremium }: Props) {
                         </div>
                     )}
 
-                    {/* ✅ STEP 3: Configuration */}
+                    {/* ── STEP 3 ───────────────────────────────────────────── */}
                     {currentStep === 3 && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-6">
                                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                                    <DollarSign className="h-5 w-5 text-primary"/>
-                                    Configuration
+                                    <DollarSign className="h-5 w-5 text-primary"/> Configuration
                                 </h2>
-
                                 <div className="space-y-4">
                                     <div className="grid md:grid-cols-2 gap-4">
                                         <div className="grid gap-2">
@@ -759,10 +745,9 @@ export default function CreateParking({ isPremium }: Props) {
                                             <InputError message={getError('price_per_hour')}/>
                                         </div>
                                     </div>
-
                                     <div className="grid gap-2">
-                                        <Label htmlFor="cancel_time_limit">Cancel Time Limit (minutes) *</Label>
-                                        <Input id="cancel_time_limit" type="number"
+                                        <Label>Cancel Time Limit (minutes) *</Label>
+                                        <Input type="number"
                                             value={fields.cancel_time_limit}
                                             onChange={e=>setField('cancel_time_limit',e.target.value)}
                                             onBlur={e=>validateField('cancel_time_limit',e.target.value)}
@@ -770,11 +755,9 @@ export default function CreateParking({ isPremium }: Props) {
                                             className={getError('cancel_time_limit')?'border-red-500':''}/>
                                         <InputError message={getError('cancel_time_limit')}/>
                                     </div>
-
                                     <div className="space-y-3 rounded-lg border p-4 bg-background">
                                         <Label className="text-base font-semibold flex items-center gap-2">
-                                            <Clock className="h-4 w-4"/>
-                                            Hours
+                                            <Clock className="h-4 w-4"/> Hours
                                         </Label>
                                         <div className="flex items-center space-x-3">
                                             <Checkbox id="is_24h" checked={fields.is_24h}
@@ -801,31 +784,40 @@ export default function CreateParking({ isPremium }: Props) {
                         </div>
                     )}
 
-                                         {/* ✅ STEP 4: Media & AI */}
+                    {/* ── STEP 4 ───────────────────────────────────────────── */}
                     {currentStep === 4 && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                            
-                            
 
                             {/* Photo */}
                             <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-6">
                                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                                     <ImageIcon className="h-5 w-5 text-primary"/>
-                                    Parking Photo *
+                                    Parking Photo
+                                    <span className="text-xs font-normal text-muted-foreground">(optional — replaces current)</span>
                                 </h2>
+                                {parking.photo_url && !photoPreview && (
+                                    <div className="mb-4">
+                                        <p className="text-xs text-muted-foreground mb-2">Current photo:</p>
+                                        <div className="relative inline-block">
+                                            <img src={parking.photo_url} alt="Current"
+                                                className="h-32 rounded-lg border object-cover shadow-sm"/>
+                                            <div className="absolute top-1 left-1 bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">CURRENT</div>
+                                        </div>
+                                    </div>
+                                )}
                                 <Input type="file" accept="image/*" onChange={handlePhotoChange}
                                     className={getError('photo')?'border-red-500':''}/>
                                 <InputError message={getError('photo')}/>
                                 {photoPreview && (
                                     <div className="mt-4 relative inline-block">
-                                        <img src={photoPreview} alt="Preview"
+                                        <img src={photoPreview} alt="New"
                                             className="h-32 rounded-lg border object-cover shadow-sm"/>
-                                        <div className="absolute top-1 left-1 bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">LOGO</div>
+                                        <div className="absolute top-1 left-1 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">NEW</div>
                                     </div>
                                 )}
                             </div>
 
-                            {/* ✅ Annotation Premium */}
+                            {/* Annotation Premium */}
                             {isPremium ? (
                                 <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/30 dark:border-indigo-900 dark:bg-indigo-950/20 p-6">
                                     <div className="flex items-start justify-between gap-3 mb-4">
@@ -833,102 +825,102 @@ export default function CreateParking({ isPremium }: Props) {
                                             <h2 className="text-lg font-semibold flex items-center gap-2">
                                                 <ScanLine className="h-5 w-5 text-indigo-600"/>
                                                 Spot Annotation
-                                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                                                     <Crown className="h-2.5 w-2.5"/> Premium
                                                 </span>
                                             </h2>
-                                            <p className="text-sm text-muted-foreground mt-1">Upload top-view image and annotate spots</p>
+                                            <p className="text-sm text-muted-foreground mt-1">Upload new file to re-annotate spots</p>
                                         </div>
-                                        
-                                        {/* ✅ Indicateur Matching */}
-                                        {annotPreview && (
+                                        {annotPreview && !removeAnnotation && (
                                             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${
-                                                slots.length === Number(fields.total_spots) && slots.length > 0
-                                                    ? 'bg-green-100 text-green-700 border-2 border-green-300 dark:bg-green-950/40 dark:text-green-300'
-                                                    : slots.length > Number(fields.total_spots)
-                                                    ? 'bg-red-100 text-red-700 border-2 border-red-300 dark:bg-red-950/40 dark:text-red-300'
-                                                    : slots.length > 0
-                                                    ? 'bg-amber-100 text-amber-700 border-2 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300'
-                                                    : 'bg-gray-100 text-gray-600 border-2 border-gray-300 dark:bg-gray-800 dark:text-gray-400'
+                                                slots.length === Number(fields.total_spots) && slots.length > 0 ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                                                : slots.length > Number(fields.total_spots) ? 'bg-red-100 text-red-700 border-2 border-red-300'
+                                                : slots.length === 0 ? 'bg-gray-100 text-gray-600 border-2 border-gray-300'
+                                                : 'bg-amber-100 text-amber-700 border-2 border-amber-300'
                                             }`}>
-                                                {slots.length === Number(fields.total_spots) && slots.length > 0 ? (
-                                                    <>
-                                                        <Check className="h-4 w-4"/>
-                                                        {slots.length}/{fields.total_spots || 0} Matched
-                                                    </>
-                                                ) : slots.length > Number(fields.total_spots) ? (
-                                                    <>
-                                                        <AlertTriangle className="h-4 w-4"/>
-                                                        {slots.length}/{fields.total_spots || 0} Too Many
-                                                    </>
-                                                ) : slots.length > 0 ? (
-                                                    <>
-                                                        <Info className="h-4 w-4"/>
-                                                        {slots.length}/{fields.total_spots || 0} Incomplete
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Layers className="h-4 w-4"/>
-                                                        0/{fields.total_spots || 0} Not Started
-                                                    </>
-                                                )}
+                                                {slots.length === Number(fields.total_spots) && slots.length > 0
+                                                    ? <><Check className="h-4 w-4"/> {slots.length}/{fields.total_spots} ✓</>
+                                                    : slots.length > Number(fields.total_spots)
+                                                    ? <><AlertTriangle className="h-4 w-4"/> {slots.length}/{fields.total_spots} Too Many</>
+                                                    : slots.length === 0
+                                                    ? <><AlertCircle className="h-4 w-4"/> 0/{fields.total_spots} Not Started</>
+                                                    : <><Info className="h-4 w-4"/> {slots.length}/{fields.total_spots} Incomplete</>
+                                                }
                                             </div>
                                         )}
                                     </div>
-
                                     <div className="space-y-4">
-                                        <Input type="file" accept="image/*"
-                                            onChange={handleAnnotationFileChange}
-                                            className={getError('annotation_file')?'border-red-500':''}/>
-                                        <InputError message={getError('annotation_file')}/>
-                                        
-                                        {annotPreview && (
+                                        {parking.annotation_image_url && !annotationFile && !removeAnnotation && (
+                                            <div>
+                                                <p className="text-xs text-muted-foreground mb-2">Current annotation:</p>
+                                                <div className="relative inline-block">
+                                                    <img src={parking.annotation_image_url} alt="Current"
+                                                        className="h-32 rounded-lg border object-cover shadow-sm"/>
+                                                    <div className="absolute top-1 left-1 bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">CURRENT</div>
+                                                </div>
+                                                <div className="mt-2">
+                                                    <Button type="button" size="sm" variant="destructive"
+                                                        onClick={() => { setRemoveAnnotation(true); setAnnotPreview(null); setSlots([]); }}>
+                                                        <Trash2 className="h-3.5 w-3.5 mr-1.5"/> Remove Annotation
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {removeAnnotation && (
+                                            <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                                                <Trash2 className="h-4 w-4 shrink-0"/>
+                                                <span>Annotation will be removed on save.</span>
+                                                <Button type="button" size="sm" variant="ghost" className="ml-auto"
+                                                    onClick={() => {
+                                                        setRemoveAnnotation(false);
+                                                        setAnnotPreview(parking.annotation_image_url);
+                                                        setSlots(parking.slots || []);
+                                                    }}>
+                                                    Undo
+                                                </Button>
+                                            </div>
+                                        )}
+                                        {!removeAnnotation && (
+                                            <>
+                                                <Input type="file" accept="image/*"
+                                                    onChange={handleAnnotationFileChange}
+                                                    className={getError('annotation_file')?'border-red-500':''}/>
+                                                <InputError message={getError('annotation_file')}/>
+                                            </>
+                                        )}
+                                        {annotPreview && !removeAnnotation && (
                                             <div className="space-y-4">
                                                 <SpotAnnotator imageSrc={annotPreview} slots={slots} onChange={setSlots}/>
-                                                
-                                                {/* Messages de validation */}
-                                                {slots.length > 0 && slots.length !== Number(fields.total_spots) && (
-                                                    <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
-                                                        slots.length > Number(fields.total_spots)
-                                                            ? 'bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300'
-                                                            : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-300'
-                                                    }`}>
-                                                        <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5"/>
-                                                        <div>
-                                                            <p className="font-semibold">
-                                                                {slots.length > Number(fields.total_spots)
-                                                                    ? 'Too many spots annotated'
-                                                                    : 'Missing annotations'}
-                                                            </p>
-                                                            <p className="mt-1">
-                                                                {slots.length > Number(fields.total_spots)
-                                                                    ? `You annotated ${slots.length} spots but declared ${fields.total_spots} total spots. Remove ${slots.length - Number(fields.total_spots)} annotation(s).`
-                                                                    : `You annotated ${slots.length} spots but declared ${fields.total_spots} total spots. Add ${Number(fields.total_spots) - slots.length} more annotation(s).`
-                                                                }
-                                                            </p>
-                                                        </div>
+                                                {slots.length === 0 && (
+                                                    <div className="flex items-start gap-3 rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                                                        <AlertCircle className="h-5 w-5 shrink-0 mt-0.5"/>
+                                                        <p>Please draw all {fields.total_spots} parking spots.</p>
                                                     </div>
                                                 )}
-
-                                                {slots.length > 0 && slots.length === Number(fields.total_spots) && (
-                                                    <div className="flex items-center gap-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300">
-                                                        <Check className="h-5 w-5 shrink-0"/>
+                                                {slots.length > 0 && slots.length !== Number(fields.total_spots) && (
+                                                    <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${slots.length > Number(fields.total_spots) ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                                                        <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5"/>
                                                         <p>
-                                                            <strong>Perfect match!</strong> All {slots.length} spots have been annotated correctly.
+                                                            {slots.length > Number(fields.total_spots)
+                                                                ? `Too many: ${slots.length} annotated, declared ${fields.total_spots}. Remove ${slots.length - Number(fields.total_spots)}.`
+                                                                : `Missing: ${slots.length} annotated, declared ${fields.total_spots}. Add ${Number(fields.total_spots) - slots.length} more.`
+                                                            }
                                                         </p>
                                                     </div>
                                                 )}
+                                                {slots.length > 0 && slots.length === Number(fields.total_spots) && (
+                                                    <div className="flex items-center gap-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+                                                        <Check className="h-5 w-5 shrink-0"/>
+                                                        <p><strong>Perfect match!</strong> All {slots.length} spots annotated.</p>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
-                                    
                                     {getError('slots') && (
-                                        <div className="mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                                        <div className="mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                                             <AlertCircle className="h-5 w-5 shrink-0 mt-0.5"/>
-                                            <div>
-                                                <p className="font-semibold">Annotation Error</p>
-                                                <p className="mt-1">{getError('slots')}</p>
-                                            </div>
+                                            <p>{getError('slots')}</p>
                                         </div>
                                     )}
                                 </div>
@@ -936,46 +928,61 @@ export default function CreateParking({ isPremium }: Props) {
                                 <PremiumUpgradeBlock/>
                             )}
 
-                            {/* Cameras */}
-                            <div className="space-y-4 rounded-lg border p-5 bg-muted/10">
+                            {/* Caméras OBLIGATOIRES */}
+                            <div className="space-y-4 rounded-xl border-2 border-primary/20 bg-primary/5 p-6">
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <Label className="text-base font-semibold flex items-center gap-2">
-                                            <CameraIcon className="h-5 w-5 text-primary"/> Cameras (Optional)
+                                            <CameraIcon className="h-5 w-5 text-primary"/> Cameras *
                                         </Label>
                                         <p className="text-sm text-muted-foreground mt-1">
-                                            Add IP cameras or DroidCam URLs.
+                                            At least one camera is required.
                                         </p>
                                     </div>
                                     <Button type="button" variant="outline" size="sm" onClick={addCamera}>
-                                        <Plus className="mr-1 h-4 w-4"/> Add
+                                        <Plus className="mr-1 h-4 w-4"/> Add Camera
                                     </Button>
                                 </div>
 
+                                {getError('cameras') && (
+                                    <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                        <AlertCircle className="h-4 w-4 shrink-0"/>
+                                        <span>{getError('cameras')}</span>
+                                    </div>
+                                )}
+
                                 {cameras.length === 0 ? (
-                                    <div className="text-center py-6 text-muted-foreground text-sm border border-dashed rounded-lg bg-background">
-                                        No cameras added yet.
+                                    <div className={`text-center py-6 text-sm border-2 border-dashed rounded-lg bg-background ${submitted && !cameras.length ? 'border-red-300 text-red-500' : 'border-border text-muted-foreground'}`}>
+                                        {submitted && !cameras.length
+                                            ? 'At least one camera is required.'
+                                            : 'No cameras configured. Click "Add Camera" to add one.'}
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
                                         {cameras.map((camera, index) => (
-                                            <div key={index} className="flex flex-col gap-4 p-5 border rounded-lg bg-background relative shadow-sm">
+                                            <div key={camera.id ?? index}
+                                                className="flex flex-col gap-4 p-5 border rounded-lg bg-background relative shadow-sm">
+                                                {camera.id && (
+                                                    <div className="absolute top-2 left-2 bg-muted text-muted-foreground text-[10px] px-1.5 py-0.5 rounded font-medium">
+                                                        ID #{camera.id}
+                                                    </div>
+                                                )}
                                                 <Button type="button" variant="ghost" size="icon"
                                                     className="absolute top-2 right-2 text-red-500 hover:text-red-700"
                                                     onClick={() => removeCamera(index)}>
                                                     <Trash2 className="h-4 w-4"/>
                                                 </Button>
-
-                                                <div className="grid md:grid-cols-2 gap-4 pr-8">
+                                                <div className={`grid md:grid-cols-2 gap-4 pr-8 ${camera.id ? 'pt-5' : ''}`}>
                                                     <div className="grid gap-2">
-                                                        <Label>Camera Name</Label>
+                                                        <Label>Camera Name *</Label>
                                                         <Input placeholder="Main Entrance"
                                                             value={camera.name}
-                                                            onChange={e => updateCamera(index, 'name', e.target.value)}/>
+                                                            onChange={e => updateCamera(index, 'name', e.target.value)}
+                                                            className={getError(`camera_${index}_name`) ? 'border-red-500' : ''}/>
+                                                        <InputError message={getError(`camera_${index}_name`)}/>
                                                     </div>
-
                                                     <div className="grid gap-2">
-                                                        <Label>Type</Label>
+                                                        <Label>Type *</Label>
                                                         <select
                                                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                                                             value={camera.type}
@@ -984,55 +991,34 @@ export default function CreateParking({ isPremium }: Props) {
                                                             <option value="gate">Gate (License plates)</option>
                                                         </select>
                                                     </div>
-
                                                     <div className="grid gap-2 md:col-span-2">
-                                                        <Label>Stream URL</Label>
-                                                        <Input type="url"
+                                                        <Label>Stream URL *</Label>
+                                                        <Input
                                                             placeholder="http://192.168.1.XX:4747/video"
                                                             value={camera.stream_url}
-                                                            onChange={e => updateCamera(index, 'stream_url', e.target.value)}/>
+                                                            onChange={e => updateCamera(index, 'stream_url', e.target.value)}
+                                                            className={getError(`camera_${index}_stream_url`) ? 'border-red-500' : ''}/>
+                                                        <InputError message={getError(`camera_${index}_stream_url`)}/>
                                                     </div>
-
                                                     {camera.type === 'gate' && (
                                                         <div className="grid gap-3 md:col-span-2">
-                                                            <Label>Barrier Mode</Label>
+                                                            <Label>Barrier Mode *</Label>
                                                             <div className="grid grid-cols-2 gap-3">
                                                                 {([
-                                                                    {
-                                                                        value: 'entrance' as GateMode,
-                                                                        emoji: '🚗',
-                                                                        label: 'Entrance',
-                                                                        desc:  'Incoming vehicles',
-                                                                        activeClass: 'border-green-500 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300',
-                                                                        inactiveClass: 'border-border text-muted-foreground hover:border-green-300',
-                                                                    },
-                                                                    {
-                                                                        value: 'exit' as GateMode,
-                                                                        emoji: '🚙',
-                                                                        label: 'Exit',
-                                                                        desc:  'Outgoing vehicles',
-                                                                        activeClass: 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-                                                                        inactiveClass: 'border-border text-muted-foreground hover:border-red-300',
-                                                                    },
+                                                                    { value: 'entrance' as GateMode, emoji: '🚗', label: 'Entrance', desc: 'Incoming vehicles', activeClass: 'border-green-500 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300', inactiveClass: 'border-border text-muted-foreground hover:border-green-300' },
+                                                                    { value: 'exit'     as GateMode, emoji: '🚙', label: 'Exit',     desc: 'Outgoing vehicles', activeClass: 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',     inactiveClass: 'border-border text-muted-foreground hover:border-red-300'   },
                                                                 ]).map(opt => (
-                                                                    <button
-                                                                        key={opt.value}
-                                                                        type="button"
+                                                                    <button key={opt.value} type="button"
                                                                         onClick={() => updateCamera(index, 'gate_mode', opt.value)}
-                                                                        className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-4 py-4 text-sm font-medium transition-all ${
-                                                                            camera.gate_mode === opt.value
-                                                                                ? opt.activeClass
-                                                                                : opt.inactiveClass
-                                                                        }`}>
+                                                                        className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-4 py-4 text-sm font-medium transition-all ${camera.gate_mode === opt.value ? opt.activeClass : opt.inactiveClass}`}>
                                                                         <span className="text-2xl">{opt.emoji}</span>
                                                                         <span className="font-semibold">{opt.label}</span>
                                                                         <span className="text-[11px] opacity-70">{opt.desc}</span>
-                                                                        {camera.gate_mode === opt.value && (
-                                                                            <Check className="h-4 w-4 mt-1"/>
-                                                                        )}
+                                                                        {camera.gate_mode === opt.value && <Check className="h-4 w-4 mt-1"/>}
                                                                     </button>
                                                                 ))}
                                                             </div>
+                                                            <InputError message={getError(`camera_${index}_gate_mode`)}/>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1044,35 +1030,33 @@ export default function CreateParking({ isPremium }: Props) {
                         </div>
                     )}
 
-                    {/* ✅ Navigation Buttons */}
+                    {/* Navigation — en dehors de tout <form>, pas de submit natif possible */}
                     <div className="flex gap-4 pt-6 border-t">
                         {currentStep > 1 && (
                             <Button type="button" variant="outline" onClick={prevStep} disabled={processing}>
                                 <ChevronLeft className="h-4 w-4 mr-1"/> Previous
                             </Button>
                         )}
-                        
                         {currentStep < STEPS.length ? (
                             <Button type="button" onClick={nextStep} disabled={!canGoNext()} className="flex-1">
                                 Next <ChevronRight className="h-4 w-4 ml-1"/>
                             </Button>
                         ) : (
-                            <Button type="submit" className="flex-1" disabled={processing}>
+                            /* Le seul bouton qui déclenche le submit */
+                            <Button type="button" onClick={handleSubmit} className="flex-1" disabled={processing}>
                                 {processing
-                                    ? <><Spinner className="mr-2 h-4 w-4"/> Creating...</>
+                                    ? <><Spinner className="mr-2 h-4 w-4"/> Saving...</>
                                     : isPremium && slots.length > 0
-                                        ? `Create with ${slots.length} Spot${slots.length>1?'s':''}`
-                                        : '✨ Create Parking'
+                                        ? `Update with ${slots.length} Spot${slots.length>1?'s':''}`
+                                        : 'Update Parking'
                                 }
                             </Button>
                         )}
-
-                        <Button type="button" variant="ghost"
-                            onClick={()=>router.visit('/parkings')} disabled={processing}>
+                        <Button type="button" variant="ghost" onClick={()=>router.visit('/parkings')} disabled={processing}>
                             Cancel
                         </Button>
                     </div>
-                </form>
+                </div>
             </div>
         </AppLayout>
     );
