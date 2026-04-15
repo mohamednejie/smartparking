@@ -32,14 +32,16 @@ export function AppSidebar() {
 
     // Menu construit en fonction du rôle
     const mainNavItems: NavItem[] = [
-        {
+          {
             title: 'Dashboard',
             href: dashboard(),
             icon: LayoutGrid,
-        },
+        } as NavItem,
+       
         // "My Parkings" uniquement pour les owners
         ...(userRole === 'owner'
             ? [
+               
                   {
                       title: 'My Parkings',
                       href: '/parkings',
@@ -50,11 +52,7 @@ export function AppSidebar() {
                       href: '/payment',
                       icon: Crown,
                   } as NavItem,
-                  {
-                      title: 'Booking',
-                      href: '/parkings/available',
-                      icon: CalendarCheck,
-                  } as NavItem,
+                  
                   
               ]
             : []),
@@ -67,10 +65,16 @@ export function AppSidebar() {
                       icon: CalendarCheck,
                   } as NavItem,
                   {
-    title: 'My Reservations',
-    href: '/reservations',
-    icon: ClipboardList,
-} as NavItem,
+                      title: 'My Reservations',
+                      href: '/reservations',
+                      icon: ClipboardList,
+                  } as NavItem,
+                  {
+                      title: 'My vehicles',
+                      href: '/settings/vehicles',
+                      icon: Car,
+                  } as NavItem,
+
               ]
             : []),
     ];

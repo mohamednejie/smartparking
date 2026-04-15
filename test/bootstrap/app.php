@@ -8,6 +8,8 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use App\Http\Middleware\PreventBackHistory;  // ← AJOUTE CET IMPORT
 use App\Http\Middleware\CheckAuthOnBack;
+use App\Http\Middleware\CheckRole;
+
 
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -29,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'no.back' => CheckAuthOnBack::class,
+            'role' => CheckRole::class,
         ]);
 
     })

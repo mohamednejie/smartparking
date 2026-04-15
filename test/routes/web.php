@@ -6,7 +6,7 @@ use Inertia\Inertia;
 use Laravel\Fortify\Features;
 use App\Http\Controllers\ParkingController;
 use App\Http\Controllers\ReservationController;
-
+use App\Http\Controllers\DashboardController;
 
 // ✅ Page d'accueil → Welcome (si non connecté) / Dashboard (si connecté)
 Route::get('/', function () {
@@ -17,19 +17,20 @@ Route::get('/', function () {
         'ownerCount' => \App\Models\User::where('role', 'owner')->count(),
         'driverCount' => \App\Models\User::where('role', 'driver')->count(),
         'parkingCount' => \App\Models\Parking::count(),
-    ]);  // ← Affiche welcome au lieu de rediriger vers login
+    ]);  
 })->name('home');
 
 // Dashboard (protégé → si non connecté → redirige vers login automatiquement)
-Route::get('dashboard', function () {
-    return Inertia::render('dashboard');
-})->middleware(['auth', 'verified', 'no.back'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
 
 // Routes parkings (protégées)
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('parkings/{parking}/toggle-status', [ParkingController::class, 'toggleStatus'])
         ->name('parkings.toggle-status');
     Route::get('parkings/available', [ParkingController::class, 'available'])
+          ->middleware(['auth', 'verified', ])
         ->name('parkings.available');   
     Route::get('/parkings/suggestions', [ParkingController::class, 'suggestions'])
     ->name('parkings.suggestions');
@@ -46,6 +47,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::patch('/reservations/{reservation}/cancel', [ReservationController::class, 'cancel'])
         ->name('reservations.cancel');
+     Route::delete('/reservations/{reservation}/hide', [ReservationController::class, 'hide'])->name('reservations.hide');    
 
     Route::post('/parkings/{parking}/reservations', [ReservationController::class, 'store'])
         ->name('parkings.reservations.store');

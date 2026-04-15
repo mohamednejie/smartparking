@@ -471,20 +471,7 @@ export default function AvailableParkings({
                                 <p className="text-muted-foreground mt-2">Find and book the perfect parking spot</p>
                             </div>
                             <div className="flex items-center gap-3 self-start sm:self-auto">
-                                {/* ✅ Indicateur serveur IA */}
-                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                                    isServerOnline === null ? 'bg-gray-100 text-gray-500' :
-                                    isServerOnline          ? 'bg-green-100 text-green-700' :
-                                                             'bg-slate-100 text-slate-500'
-                                }`}>
-                                    {isServerOnline === null
-                                        ? <Loader2 className="h-3 w-3 animate-spin" />
-                                        : isServerOnline
-                                            ? <Wifi    className="h-3 w-3" />
-                                            : <WifiOff className="h-3 w-3" />
-                                    }
-                                    <span>{isServerOnline ? 'Live data' : 'Static data'}</span>
-                                </div>
+                                
 
                                 <Button variant="outline" onClick={refreshData} disabled={isLoading}>
                                     <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
